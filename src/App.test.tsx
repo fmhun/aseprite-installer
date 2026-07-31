@@ -1,5 +1,5 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { api } from "./api";
 
@@ -18,6 +18,10 @@ vi.mock("./api", () => ({
     cleanCache: vi.fn(),
     openExternal: vi.fn(),
   },
+}));
+
+vi.mock("./timing", () => ({
+  withMinimumDuration: (operation: Promise<unknown>) => operation,
 }));
 
 const release = {
@@ -52,6 +56,21 @@ const preflight = {
   ],
 };
 
+const missingPreflight = {
+  ...preflight,
+  ready: false,
+  prerequisites: [
+    {
+      id: "cmake",
+      label: "CMake",
+      ok: false,
+      required: true,
+      detail: "Not found",
+      remediation: "Install CMake from cmake.org or Homebrew.",
+    },
+  ],
+};
+
 const manualInstallation = {
   id: "manual",
   path: "/Applications/Aseprite.app",
@@ -65,7 +84,38 @@ const manualInstallation = {
   installedAt: null,
 };
 
+const managedInstallation = {
+  ...manualInstallation,
+  id: "managed",
+  path: "/Users/test/Applications/Aseprite.app",
+  version: "v1.3.18.1",
+  versionExact: true,
+  channel: "managed" as const,
+  hasBackup: true,
+  installedAt: "2026-07-30T12:00:00Z",
+};
+
+async function reachInstallConfirmation() {
+  fireEvent.click(
+    await screen.findByRole("button", { name: /^Install Aseprite/ }),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: /^Check requirements/ }),
+  );
+  fireEvent.click(
+    await screen.findByRole("button", { name: /^Compile and install/ }),
+  );
+  fireEvent.click(
+    await screen.findByRole("checkbox", {
+      name: /I have read the Aseprite EULA/,
+    }),
+  );
+  return screen.getByRole("button", { name: /^Accept and start/ });
+}
+
 describe("Aseprite Installer contextual flow", () => {
+  afterEach(cleanup);
+
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(api.listReleases).mockResolvedValue([release]);
@@ -78,14 +128,26 @@ describe("Aseprite Installer contextual flow", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: /Aseprite is not installed|Aseprite n’est pas installé/,
+        name: "Aseprite is not installed",
       }),
     ).toBeInTheDocument();
     expect(api.listReleases).not.toHaveBeenCalled();
     expect(api.runPreflight).not.toHaveBeenCalled();
+    expect(screen.queryByText(/Other detected installations/)).not.toBeInTheDocument();
     expect(
       screen.queryByText(/SHA-256/),
     ).not.toBeInTheDocument();
+    expect(screen.getByRole("contentinfo", { name: "Project links" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Aseprite" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Aseprite on GitHub" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Aseprite Installer on GitHub" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Aseprite" }));
+    fireEvent.click(screen.getByRole("button", { name: "Aseprite on GitHub" }));
+    fireEvent.click(screen.getByRole("button", { name: "Aseprite Installer on GitHub" }));
+    expect(api.openExternal).toHaveBeenNthCalledWith(1, "https://www.aseprite.org/");
+    expect(api.openExternal).toHaveBeenNthCalledWith(2, "https://github.com/aseprite/aseprite");
+    expect(api.openExternal).toHaveBeenNthCalledWith(3, "https://github.com/fmhun/asprite-installer");
   });
 
   it("shows a minimal installed state before entering the reinstall flow", async () => {
@@ -94,13 +156,13 @@ describe("Aseprite Installer contextual flow", () => {
 
     expect(
       await screen.findByRole("heading", {
-        name: /already installed|déjà installé/,
+        name: "Aseprite is already installed",
       }),
     ).toBeInTheDocument();
     expect(screen.getByText("Aseprite 1.3 · arm64")).toBeInTheDocument();
     expect(
       screen.getByRole("button", {
-        name: /Manage this installation|Gérer cette installation/,
+        name: "Manage this installation",
       }),
     ).toBeInTheDocument();
     expect(api.listReleases).not.toHaveBeenCalled();
@@ -110,7 +172,7 @@ describe("Aseprite Installer contextual flow", () => {
   it("loads releases and requirements only when their steps are opened", async () => {
     render(<App />);
     const installButton = await screen.findByRole("button", {
-      name: /Install Aseprite|Installer Aseprite/,
+      name: /^Install Aseprite/,
     });
     fireEvent.click(installButton);
 
@@ -119,14 +181,175 @@ describe("Aseprite Installer contextual flow", () => {
     expect(api.runPreflight).not.toHaveBeenCalled();
 
     fireEvent.click(
-      screen.getByRole("button", { name: /Check this Mac|Vérifier ce Mac/ }),
+      screen.getByRole("button", { name: /^Check requirements/ }),
     );
     await waitFor(() => expect(api.runPreflight).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("CMake")).toBeInTheDocument();
     expect(
       screen.getByRole("button", {
-        name: /Compile and install|Compiler et installer/,
+        name: /^Compile and install/,
       }),
+    ).toBeEnabled();
+  });
+
+  it("shows other installations only when more than one copy is detected", async () => {
+    vi.mocked(api.scanInstallations).mockResolvedValue([
+      managedInstallation,
+      manualInstallation,
+    ]);
+    render(<App />);
+
+    expect(
+      await screen.findByText("Other detected installations (1)"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows current manual setup guidance for every missing requirement", async () => {
+    vi.mocked(api.runPreflight).mockResolvedValue(missingPreflight);
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Install Aseprite/ }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Check requirements/ }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Install manually" }),
+    );
+
+    const dialog = screen.getByRole("dialog", { name: "Install CMake" });
+    expect(within(dialog).getByText("brew install cmake")).toBeInTheDocument();
+    expect(
+      within(dialog).getByRole("button", { name: /Official CMake downloads/ }),
+    ).toBeInTheDocument();
+  });
+
+  it("rechecks requirements before opening the EULA and refreshes invalid state", async () => {
+    vi.mocked(api.runPreflight)
+      .mockResolvedValueOnce(preflight)
+      .mockResolvedValueOnce(missingPreflight);
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Install Aseprite/ }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Check requirements/ }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Compile and install/ }),
+    );
+
+    await waitFor(() => expect(api.runPreflight).toHaveBeenCalledTimes(2));
+    expect(screen.queryByRole("dialog", { name: "Personal-use compilation" })).not.toBeInTheDocument();
+    expect(await screen.findByText("Not found")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Check again/ })).toBeEnabled();
+  });
+
+  it("stops a failed installation and offers a working retry", async () => {
+    vi.mocked(api.startInstall)
+      .mockRejectedValueOnce("Quit Aseprite before replacing, restoring, or removing it.")
+      .mockResolvedValueOnce(managedInstallation);
+    render(<App />);
+
+    fireEvent.click(await reachInstallConfirmation());
+
+    expect(
+      await screen.findByRole("heading", { name: "Installation stopped" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText("Quit Aseprite before replacing, restoring, or removing it."),
+    ).toBeInTheDocument();
+    const progressFill = screen.getByRole("progressbar").firstElementChild;
+    expect(progressFill).not.toHaveClass("indeterminate");
+    expect(screen.getByRole("button", { name: "Try again" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    expect(
+      await screen.findByRole("heading", { name: "Aseprite is ready" }),
+    ).toBeInTheDocument();
+    expect(api.startInstall).toHaveBeenCalledTimes(2);
+  });
+
+  it("keeps the technical log visible and non-collapsible while installing", async () => {
+    vi.mocked(api.startInstall).mockImplementation(() => new Promise(() => {}));
+    render(<App />);
+
+    fireEvent.click(await reachInstallConfirmation());
+
+    const logHeading = await screen.findByRole("heading", {
+      name: "Logs",
+    });
+    expect(logHeading.closest("section")).toHaveClass("logs");
+    expect(document.querySelector("details.logs")).not.toBeInTheDocument();
+  });
+
+  it("restores a backup through an explicit in-app confirmation", async () => {
+    vi.mocked(api.scanInstallations).mockResolvedValue([managedInstallation]);
+    vi.mocked(api.restorePrevious).mockResolvedValue(managedInstallation);
+    render(<App />);
+
+    fireEvent.click(await screen.findByText("More options"));
+    fireEvent.click(screen.getByRole("button", { name: "Restore previous" }));
+    const dialog = screen.getByRole("dialog", {
+      name: "Restore the previous installation?",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Restore previous" }),
+    );
+
+    await waitFor(() =>
+      expect(api.restorePrevious).toHaveBeenCalledWith(managedInstallation.id),
+    );
+    expect(
+      await screen.findByText("The previous installation was restored."),
+    ).toBeInTheDocument();
+  });
+
+  it("uninstalls a managed app through an explicit confirmation", async () => {
+    vi.mocked(api.scanInstallations).mockResolvedValue([managedInstallation]);
+    vi.mocked(api.uninstallManaged).mockResolvedValue();
+    render(<App />);
+
+    fireEvent.click(await screen.findByText("More options"));
+    fireEvent.click(screen.getByRole("button", { name: "Uninstall" }));
+    const dialog = screen.getByRole("dialog", {
+      name: "Uninstall Aseprite?",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Uninstall" }),
+    );
+
+    await waitFor(() =>
+      expect(api.uninstallManaged).toHaveBeenCalledWith(managedInstallation.id),
+    );
+    expect(
+      await screen.findByText("The managed application was moved to the Trash."),
+    ).toBeInTheDocument();
+  });
+
+  it("keeps action errors visible inside the confirmation dialog", async () => {
+    vi.mocked(api.scanInstallations).mockResolvedValue([managedInstallation]);
+    vi.mocked(api.restorePrevious).mockRejectedValue(
+      "Quit Aseprite before replacing, restoring, or removing it.",
+    );
+    render(<App />);
+
+    fireEvent.click(await screen.findByText("More options"));
+    fireEvent.click(screen.getByRole("button", { name: "Restore previous" }));
+    const dialog = screen.getByRole("dialog", {
+      name: "Restore the previous installation?",
+    });
+    fireEvent.click(
+      within(dialog).getByRole("button", { name: "Restore previous" }),
+    );
+
+    expect(
+      await within(dialog).findByRole("alert"),
+    ).toHaveTextContent("Quit Aseprite before replacing, restoring, or removing it.");
+    expect(
+      within(dialog).getByRole("button", { name: "Restore previous" }),
     ).toBeEnabled();
   });
 });

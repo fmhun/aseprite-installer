@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Only the main window can call explicitly registered Rust commands.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "core:window:allow-set-size"]
 }

@@ -9,8 +9,48 @@ use crate::releases;
 use crate::state::AppState;
 use std::path::{Path, PathBuf};
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{LogicalSize, State, Window};
 use url::Url;
+
+fn validated_window_height(height: f64) -> AppResult<f64> {
+    if height.is_finite() && (420.0..=2_000.0).contains(&height) {
+        Ok(height.round())
+    } else {
+        Err(InstallerError::new(
+            "invalidWindowHeight",
+            "The requested installer window height is invalid.",
+        ))
+    }
+}
+
+#[tauri::command]
+pub fn resize_window(height: f64, window: Window) -> AppResult<()> {
+    let height = validated_window_height(height)?;
+    let scale_factor = window.scale_factor().map_err(|error| {
+        InstallerError::with_detail(
+            "windowResize",
+            "The installer window could not be resized.",
+            error.to_string(),
+        )
+    })?;
+    let inner_size = window.inner_size().map_err(|error| {
+        InstallerError::with_detail(
+            "windowResize",
+            "The installer window could not be resized.",
+            error.to_string(),
+        )
+    })?;
+    let width = f64::from(inner_size.width) / scale_factor;
+    window
+        .set_size(LogicalSize::new(width, height))
+        .map_err(|error| {
+            InstallerError::with_detail(
+                "windowResize",
+                "The installer window could not be resized.",
+                error.to_string(),
+            )
+        })
+}
 
 #[tauri::command]
 pub async fn list_releases(
@@ -250,22 +290,39 @@ pub async fn open_external(url: String) -> AppResult<()> {
     let parsed = Url::parse(&url).map_err(|_| {
         InstallerError::new("externalUrl", "The requested external URL is invalid.")
     })?;
-    let allowed = parsed.scheme() == "https"
-        && match parsed.host_str() {
-            Some("www.aseprite.org") | Some("aseprite.org") => true,
-            Some("github.com") => {
-                parsed.path().starts_with("/aseprite/aseprite")
-                    || parsed.path().starts_with("/fmhun/asprite-installer")
-            }
-            _ => false,
-        };
-    if !allowed {
+    if !is_allowed_external_url(&parsed) {
         return Err(InstallerError::new(
             "externalUrl",
-            "Only official Aseprite and installer project links can be opened.",
+            "Only approved official project and requirements documentation can be opened.",
         ));
     }
     run_open(&[url.as_str()]).await
+}
+
+fn is_allowed_external_url(url: &Url) -> bool {
+    if url.scheme() != "https" {
+        return false;
+    }
+
+    match url.host_str() {
+        Some("www.aseprite.org") | Some("aseprite.org") => true,
+        Some("github.com") => {
+            url.path().starts_with("/aseprite/aseprite")
+                || url.path().starts_with("/fmhun/asprite-installer")
+                || url.path().starts_with("/ninja-build/ninja/releases")
+        }
+        Some("developer.apple.com") => url
+            .path()
+            .starts_with("/documentation/xcode/installing-the-command-line-tools"),
+        Some("support.apple.com") => {
+            url.path().starts_with("/en-us/108382") || url.path().starts_with("/en-us/102624")
+        }
+        Some("cmake.org") => url.path().starts_with("/download"),
+        Some("formulae.brew.sh") => {
+            url.path() == "/formula/cmake" || url.path() == "/formula/ninja"
+        }
+        _ => false,
+    }
 }
 
 async fn run_open(arguments: &[&str]) -> AppResult<()> {
@@ -322,5 +379,41 @@ mod tests {
             )],
         );
         assert_eq!(result.unwrap_err().code, "adoptionRequired");
+    }
+
+    #[test]
+    fn validates_window_height_bounds() {
+        assert_eq!(validated_window_height(492.4).unwrap(), 492.0);
+        assert_eq!(
+            validated_window_height(419.0).unwrap_err().code,
+            "invalidWindowHeight"
+        );
+        assert_eq!(
+            validated_window_height(f64::NAN).unwrap_err().code,
+            "invalidWindowHeight"
+        );
+    }
+
+    #[test]
+    fn restricts_external_links_to_approved_documentation() {
+        for url in [
+            "https://github.com/aseprite/aseprite/blob/main/INSTALL.md",
+            "https://github.com/ninja-build/ninja/releases",
+            "https://developer.apple.com/documentation/xcode/installing-the-command-line-tools",
+            "https://support.apple.com/en-us/102624",
+            "https://cmake.org/download/",
+            "https://formulae.brew.sh/formula/cmake",
+        ] {
+            assert!(is_allowed_external_url(&Url::parse(url).unwrap()), "{url}");
+        }
+
+        for url in [
+            "http://cmake.org/download/",
+            "https://github.com/unapproved/project",
+            "https://support.apple.com/en-us/unapproved",
+            "https://example.com/",
+        ] {
+            assert!(!is_allowed_external_url(&Url::parse(url).unwrap()), "{url}");
+        }
     }
 }

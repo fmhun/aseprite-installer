@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title description" shape-rendering="crispEdges">
+  <title id="title">Aseprite Installer</title>
+  <desc id="description">A pixel-art open package and four-color loader inside a checkerboard sprite silhouette.</desc>
+  <defs>
+    <pattern id="checker" width="32" height="32" patternUnits="userSpaceOnUse">
+      <rect width="32" height="32" fill="#c8c9cb"/>
+      <rect width="16" height="16" fill="#909296"/>
+      <rect x="16" y="16" width="16" height="16" fill="#909296"/>
+    </pattern>
+  </defs>
+
+  <!-- Transparent outside; every edge follows an 8 px grid so small exports stay sharp. -->
+  <path fill="#090b0f" d="M24 0h80v8h8v8h8v8h8v80h-8v8h-8v8h-8v8H24v-8h-8v-8H8V96H0V24h8v-8h8V8h8z"/>
+  <path fill="url(#checker)" d="M24 8h80v8h8v8h8v72h-8v8h-8v8H24v-8h-8v-8H8V24h8v-8h8z"/>
+
+  <!-- Equal 8 px bands surround and separate every colored pixel. -->
+  <rect x="44" y="16" width="40" height="40" fill="#090b0f"/>
+  <rect x="52" y="24" width="8" height="8" fill="#f4c45c"/>
+  <rect x="68" y="24" width="8" height="8" fill="#6ba8ff"/>
+  <rect x="52" y="40" width="8" height="8" fill="#e36b78"/>
+  <rect x="68" y="40" width="8" height="8" fill="#70d49c"/>
+
+  <!-- Pixel-perfect trace of concept 1: tall box, thin side walls and raised lid. -->
+  <rect x="40" y="52" width="48" height="16" fill="#090b0f"/>
+  <rect x="40" y="60" width="48" height="8" fill="#5b493d"/>
+  <rect x="28" y="68" width="72" height="40" fill="#090b0f"/>
+  <rect x="32" y="72" width="64" height="32" fill="#d8c3a6"/>
+  <rect x="32" y="72" width="64" height="4" fill="#f2e7d7"/>
+
+  <path fill="#090b0f" d="M28 40h8v4h4v4h4v4h4v8h-4v4h-4v4h-4v4h-8v-4h-4v-4h-4v-4h-4v-8h4v-4h4v-4h4zm64 0h8v4h4v4h4v4h4v8h-4v4h-4v4h-4v4h-8v-4h-4v-4h-4v-4h-4v-8h4v-4h4v-4h4z"/>
+  <path fill="#f2e7d7" d="M28 44h8v4h4v4h4v8h-4v4h-4v4h-8v-4h-4v-4h-4v-8h4v-4h4zm64 0h8v4h4v4h4v8h-4v4h-4v4h-8v-4h-4v-4h-4v-8h4v-4h4z"/>
+</svg>

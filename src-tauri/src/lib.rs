@@ -20,6 +20,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::resize_window,
             commands::list_releases,
             commands::scan_installations,
             commands::run_preflight,

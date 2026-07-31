@@ -10,8 +10,8 @@ All notable changes to Aseprite Installer are documented here.
 - Guided prerequisites and optional Homebrew installation of CMake/Ninja.
 - Cancellable local compilation with live logs.
 - Atomic installation, adoption backup, rollback, and Trash-based uninstall.
-- French and English interface.
+- English interface for the initial macOS release.
 - Context-aware installation flow with dedicated release, prerequisite, and build screens.
-- Original pixel-art application icon and interface design system.
+- Pixel-art installer icon plus a dedicated icon for locally managed Aseprite bundles.
 - Self-hosted Pixelify Sans interface typography with improved small-text readability.
 - Accessible typography scale with 14 px body text and 12 px minimum functional text.

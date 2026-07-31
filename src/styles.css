@@ -62,13 +62,12 @@ html,
 body,
 #root {
   min-width: 500px;
-  min-height: 100%;
   margin: 0;
 }
 
 body {
   min-height: 100vh;
-  overflow-x: hidden;
+  overflow: hidden;
   background-color: var(--bg);
   background-image:
     linear-gradient(45deg, var(--checker-b) 25%, transparent 25%),
@@ -103,9 +102,52 @@ summary:focus-visible {
 }
 
 .app-shell {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
   width: min(580px, calc(100% - 24px));
   margin: 0 auto;
-  padding: 6px 0 4px;
+  padding: 18px 0;
+}
+
+.app-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 5px 8px;
+  margin: auto 2px 0;
+  padding: 18px 8px 0;
+  color: var(--faint);
+  font-size: var(--type-caption);
+  line-height: var(--leading-caption);
+  text-align: center;
+}
+
+.footer-link-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-footer button {
+  padding: 0;
+  border: 0;
+  color: var(--blue);
+  background: transparent;
+  cursor: pointer;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.app-footer button:hover {
+  color: var(--accent);
+}
+
+.footer-separator {
+  color: var(--edge-light);
 }
 
 .app-header {
@@ -121,23 +163,6 @@ summary:focus-visible {
     inset 2px 2px 0 var(--edge-light),
     inset -2px -2px 0 var(--edge-dark),
     3px 3px 0 var(--shadow);
-}
-
-.app-header::after {
-  position: absolute;
-  top: 7px;
-  right: 9px;
-  width: 8px;
-  height: 8px;
-  background: var(--blue);
-  box-shadow:
-    10px 0 0 var(--accent),
-    20px 0 0 var(--danger),
-    0 10px 0 var(--green),
-    10px 10px 0 var(--faint),
-    20px 10px 0 var(--text);
-  content: "";
-  image-rendering: pixelated;
 }
 
 .brand {
@@ -160,7 +185,7 @@ summary:focus-visible {
 }
 
 .brand h1 {
-  margin: 3px 0 0;
+  margin: 0;
   color: var(--text);
   font-size: var(--type-app-title);
   font-weight: 700;
@@ -169,21 +194,10 @@ summary:focus-visible {
   text-shadow: 1px 1px 0 var(--edge-dark);
 }
 
-.eyebrow,
-.channel,
 .step-label,
 .path,
 .release-summary {
   font-family: "Pixelify Sans", Monaco, "Courier New", ui-monospace, monospace;
-}
-
-.eyebrow {
-  color: var(--blue);
-  font-size: var(--type-micro);
-  font-weight: 700;
-  line-height: var(--leading-micro);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
 }
 
 .context-card {
@@ -198,20 +212,6 @@ summary:focus-visible {
     inset 2px 2px 0 var(--edge-light),
     inset -2px -2px 0 var(--edge-dark),
     4px 4px 0 var(--shadow);
-}
-
-.context-card::before {
-  position: absolute;
-  top: 5px;
-  right: 5px;
-  width: 4px;
-  height: 4px;
-  background: var(--edge-light);
-  box-shadow:
-    -6px 0 0 var(--edge-mid),
-    0 6px 0 var(--edge-mid),
-    -6px 6px 0 var(--edge-dark);
-  content: "";
 }
 
 .status-view,
@@ -306,38 +306,6 @@ summary:focus-visible {
     inset -1px -1px 0 var(--edge-mid);
   font-size: var(--type-label) !important;
   line-height: 18px;
-}
-
-.channel {
-  display: inline-flex;
-  padding: 3px 6px 2px;
-  outline: 1px solid var(--edge-dark);
-  color: var(--sunken);
-  background: var(--blue);
-  box-shadow:
-    inset 1px 1px 0 rgba(255, 255, 255, 0.35),
-    inset -1px -1px 0 var(--blue-dark),
-    1px 1px 0 var(--shadow);
-  font-size: var(--type-micro);
-  font-weight: 600;
-  line-height: var(--leading-micro);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.channel.manual {
-  color: var(--sunken);
-  background: var(--accent);
-  box-shadow:
-    inset 1px 1px 0 var(--accent-hot),
-    inset -1px -1px 0 var(--accent-dark),
-    1px 1px 0 var(--shadow);
-}
-
-.channel.steam,
-.channel.packageManager {
-  color: var(--text);
-  background: var(--raised);
 }
 
 .primary-actions {
@@ -460,8 +428,7 @@ summary:focus-visible {
 }
 
 .more-options summary,
-.other-installations summary,
-.logs summary {
+.other-installations summary {
   width: max-content;
   margin: 0 auto;
   color: var(--muted);
@@ -470,16 +437,14 @@ summary:focus-visible {
 }
 
 .more-options summary::before,
-.other-installations summary::before,
-.logs summary::before {
+.other-installations summary::before {
   margin-right: 6px;
   color: var(--accent);
   content: ">";
 }
 
 .more-options[open] summary::before,
-.other-installations[open] summary::before,
-.logs[open] summary::before {
+.other-installations[open] summary::before {
   content: "v";
 }
 
@@ -517,6 +482,7 @@ summary:focus-visible {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   margin: 0 4px 8px;
+  padding: 7px 0;
 }
 
 .stepper > div {
@@ -726,11 +692,12 @@ select {
 
 .check-list {
   display: grid;
-  max-height: 164px;
+  height: 250px;
   gap: 6px;
   margin: 0;
   padding: 2px 8px 2px 2px;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   list-style: none;
 }
 
@@ -747,6 +714,40 @@ select {
   box-shadow:
     inset 1px 1px 0 var(--edge-mid),
     inset -1px -1px 0 var(--edge-dark);
+}
+
+.check-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.manual-help-trigger {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 4px;
+  border: 0;
+  color: var(--blue);
+  background: transparent;
+  cursor: pointer;
+  font-size: var(--type-caption);
+  line-height: var(--leading-caption);
+}
+
+.manual-help-trigger > span {
+  display: grid;
+  width: 15px;
+  height: 15px;
+  place-items: center;
+  outline: 1px solid currentColor;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 15px;
+}
+
+.manual-help-trigger:hover {
+  color: var(--accent);
 }
 
 .check-mark {
@@ -819,6 +820,7 @@ select {
   height: 14px;
   margin: 8px 0 11px;
   padding: 3px;
+  overflow: hidden;
   outline: 2px solid var(--edge-dark);
   background: var(--sunken);
   box-shadow:
@@ -851,6 +853,7 @@ select {
 .progress-buttons {
   display: flex;
   justify-content: flex-end;
+  gap: 9px;
   margin-top: 12px;
 }
 
@@ -862,15 +865,27 @@ select {
   line-height: var(--leading-caption);
 }
 
-.logs summary {
+.logs h3 {
+  margin: 0;
   padding-top: 9px;
+  color: var(--muted);
+  font-size: var(--type-caption);
+  font-weight: 400;
+  line-height: var(--leading-caption);
+}
+
+.logs h3::before {
+  margin-right: 6px;
+  color: var(--accent);
+  content: ">_";
 }
 
 .logs pre {
-  max-height: 145px;
+  height: 145px;
   margin: 9px 0 0;
   padding: 10px;
   overflow: auto;
+  scrollbar-gutter: stable;
   outline: 1px solid var(--edge-dark);
   color: var(--green);
   background: #0c0f12;
@@ -937,10 +952,11 @@ select {
 
 .modal {
   position: relative;
+  display: flex;
   width: min(480px, 100%);
   max-height: calc(100vh - 36px);
-  padding: 38px 20px 20px;
-  overflow-y: auto;
+  flex-direction: column;
+  overflow: hidden;
   border: 0;
   border-radius: 0;
   outline: 2px solid var(--edge-dark);
@@ -951,24 +967,32 @@ select {
     5px 5px 0 rgba(0, 0, 0, 0.7);
 }
 
-.modal::before {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  left: 4px;
-  height: 24px;
+.modal-titlebar {
+  display: flex;
+  min-height: 30px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  margin: 4px 4px 0;
+  padding: 3px 4px 3px 8px;
   outline: 1px solid var(--edge-dark);
   background: var(--raised);
   box-shadow:
     inset 1px 1px 0 var(--edge-light),
     inset -1px -1px 0 var(--edge-dark);
-  content: "PERSONAL BUILD / Aseprite";
   color: var(--muted);
   font-size: var(--type-micro);
   font-weight: 600;
-  line-height: 24px;
-  text-indent: 8px;
+  line-height: var(--leading-micro);
   text-transform: uppercase;
+}
+
+.modal-body {
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 12px 20px 20px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .modal h2 {
@@ -1000,13 +1024,17 @@ select {
   font-size: 16px;
 }
 
+.pixel-document-icon {
+  width: 18px;
+  height: 20px;
+  color: var(--accent);
+  image-rendering: pixelated;
+}
+
 .modal-close {
-  position: absolute;
-  z-index: 1;
-  top: 8px;
-  right: 8px;
   width: 16px;
   height: 16px;
+  flex: 0 0 auto;
   padding: 0;
   border: 0;
   outline: 1px solid var(--edge-dark);
@@ -1018,6 +1046,11 @@ select {
   cursor: pointer;
   font-size: 12px;
   line-height: 14px;
+}
+
+.modal-close:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
 }
 
 .text-link {
@@ -1056,8 +1089,140 @@ select {
   margin-top: 1px;
 }
 
+.confirmation-modal {
+  width: min(430px, 100%);
+}
+
+.manual-help-modal {
+  width: min(510px, 100%);
+  height: min(590px, calc(100vh - 36px));
+}
+
+.manual-help-content {
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.manual-help-content h2 {
+  margin-top: 0;
+  font-family: "Pixelify Sans", Monaco, "Courier New", ui-monospace, monospace;
+}
+
+.manual-help-icon {
+  display: grid;
+  width: 30px;
+  height: 30px;
+  float: right;
+  place-items: center;
+  outline: 2px solid var(--edge-dark);
+  color: var(--sunken);
+  background: var(--blue);
+  box-shadow:
+    inset 2px 2px 0 #a9ccff,
+    inset -2px -2px 0 var(--blue-dark),
+    2px 2px 0 var(--shadow);
+  font-family: "Pixelify Sans", Monaco, "Courier New", ui-monospace, monospace;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.manual-help-summary {
+  margin-bottom: 14px;
+}
+
+.manual-help-detected {
+  padding: 9px 10px;
+  border-left: 4px solid var(--accent);
+  color: var(--text) !important;
+  background: var(--workspace);
+}
+
+.manual-help-steps {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+  padding-left: 25px;
+}
+
+.manual-help-steps li {
+  padding-left: 3px;
+}
+
+.manual-help-steps h3 {
+  margin: 0 0 3px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.manual-help-steps p {
+  margin: 0;
+  color: var(--muted);
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.manual-help-steps pre {
+  margin: 7px 0 0;
+  padding: 9px 10px;
+  overflow-x: auto;
+  outline: 1px solid var(--edge-dark);
+  color: var(--green);
+  background: var(--sunken);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
+.manual-help-links {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+  padding-top: 13px;
+  border-top: 1px solid var(--edge-mid);
+}
+
+.manual-help-links .text-link {
+  font-family: inherit;
+  font-size: 13px;
+  text-align: left;
+}
+
+.confirmation-path {
+  overflow: hidden;
+  padding: 8px 10px;
+  outline: 1px solid var(--edge-dark);
+  background: var(--workspace);
+  color: var(--faint) !important;
+  font-size: var(--type-caption) !important;
+  line-height: var(--leading-caption) !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.confirmation-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+  margin-top: 16px;
+}
+
+.confirmation-error {
+  padding: 9px 10px;
+  border-left: 5px solid var(--danger);
+  outline: 1px solid var(--edge-dark);
+  color: var(--text) !important;
+  background: var(--workspace);
+  font-size: var(--type-label) !important;
+  line-height: var(--leading-label) !important;
+}
+
 .loading-screen {
-  min-height: 100vh;
+  min-height: 420px;
   display: grid;
   place-content: center;
   justify-items: center;
@@ -1067,6 +1232,11 @@ select {
   line-height: var(--leading-label);
   text-transform: uppercase;
   letter-spacing: 0.04em;
+}
+
+.loading-layout .loading-screen {
+  min-height: 0;
+  flex: 1 1 auto;
 }
 
 .loading-screen img {
@@ -1149,7 +1319,6 @@ select {
     --checker-b: #91a0af;
   }
 
-  .channel,
   .check-mark {
     color: #101419;
   }

@@ -6,6 +6,7 @@ use crate::platform::macos::{installation_id, is_aseprite_bundle};
 use crate::state::AppState;
 use chrono::Utc;
 use futures_util::StreamExt;
+use plist::Value;
 use sha2::{Digest, Sha256};
 use std::fs::OpenOptions;
 use std::io::{Read, Write};
@@ -19,6 +20,9 @@ use tokio::process::Command;
 use tokio::sync::mpsc;
 use uuid::Uuid;
 use walkdir::WalkDir;
+
+const LOCAL_ASEPRITE_ICON_NAME: &str = "AsepriteInstallerLocal.icns";
+const LOCAL_ASEPRITE_ICON: &[u8] = include_bytes!("../resources/aseprite-local.icns");
 
 pub async fn install_release(
     state: &AppState,
@@ -99,11 +103,13 @@ pub async fn install_release(
             ));
         }
 
+        apply_local_aseprite_icon(&built_app)?;
+
         send_stage(
             progress,
             OperationStage::Signing,
             Some(78),
-            "Applying a local ad-hoc signature…",
+            "Applying the local app icon and ad-hoc signature…",
         );
         run_checked(
             "/usr/bin/codesign",
@@ -151,6 +157,52 @@ pub async fn install_release(
     }
 
     result
+}
+
+fn apply_local_aseprite_icon(app_bundle: &Path) -> AppResult<()> {
+    if !is_aseprite_bundle(app_bundle) {
+        return Err(InstallerError::new(
+            "invalidBundle",
+            "The local Aseprite icon can only be applied to a valid Aseprite bundle.",
+        ));
+    }
+
+    let contents = app_bundle.join("Contents");
+    let resources = contents.join("Resources");
+    let info_path = contents.join("Info.plist");
+    let temporary_info_path = contents.join(".Info.plist.aseprite-installer");
+    std::fs::create_dir_all(&resources)?;
+    std::fs::write(
+        resources.join(LOCAL_ASEPRITE_ICON_NAME),
+        LOCAL_ASEPRITE_ICON,
+    )?;
+
+    let mut info = Value::from_file(&info_path).map_err(|error| {
+        InstallerError::with_detail(
+            "bundleMetadata",
+            "The built Aseprite metadata could not be read.",
+            error.to_string(),
+        )
+    })?;
+    let dictionary = info.as_dictionary_mut().ok_or_else(|| {
+        InstallerError::new(
+            "bundleMetadata",
+            "The built Aseprite metadata has an invalid format.",
+        )
+    })?;
+    dictionary.insert(
+        "CFBundleIconFile".into(),
+        Value::String(LOCAL_ASEPRITE_ICON_NAME.into()),
+    );
+    info.to_file_xml(&temporary_info_path).map_err(|error| {
+        InstallerError::with_detail(
+            "bundleMetadata",
+            "The local Aseprite icon could not be registered.",
+            error.to_string(),
+        )
+    })?;
+    std::fs::rename(temporary_info_path, info_path)?;
+    Ok(())
 }
 
 async fn download_archive(
@@ -813,6 +865,22 @@ fn directory_size(directory: &Path) -> u64 {
 mod tests {
     use super::*;
 
+    fn write_test_aseprite_bundle(path: &Path) {
+        std::fs::create_dir_all(path.join("Contents/Resources")).unwrap();
+        let mut dictionary = plist::Dictionary::new();
+        dictionary.insert(
+            "CFBundleIdentifier".into(),
+            Value::String("org.aseprite.Aseprite".into()),
+        );
+        dictionary.insert(
+            "CFBundleIconFile".into(),
+            Value::String("aseprite.icns".into()),
+        );
+        Value::Dictionary(dictionary)
+            .to_file_xml(path.join("Contents/Info.plist"))
+            .unwrap();
+    }
+
     #[test]
     fn validates_expected_asset_names_only() {
         assert!(validate_asset_name("Aseprite-v1.3.18.1-Source.zip").is_ok());
@@ -835,5 +903,31 @@ mod tests {
         let digest = format!("sha256:{}", hex::encode(Sha256::digest(b"aseprite")));
         assert!(verify_sha256(&path, &digest).unwrap());
         assert!(!verify_sha256(&path, &format!("sha256:{}", "0".repeat(64))).unwrap());
+    }
+
+    #[test]
+    fn applies_the_managed_icon_to_a_built_aseprite_bundle() {
+        let directory = tempfile::tempdir().unwrap();
+        let bundle = directory.path().join("Aseprite.app");
+        write_test_aseprite_bundle(&bundle);
+
+        apply_local_aseprite_icon(&bundle).unwrap();
+
+        assert_eq!(
+            std::fs::read(
+                bundle
+                    .join("Contents/Resources")
+                    .join(LOCAL_ASEPRITE_ICON_NAME)
+            )
+            .unwrap(),
+            LOCAL_ASEPRITE_ICON
+        );
+        let info = Value::from_file(bundle.join("Contents/Info.plist")).unwrap();
+        assert_eq!(
+            info.as_dictionary()
+                .and_then(|dictionary| dictionary.get("CFBundleIconFile"))
+                .and_then(Value::as_string),
+            Some(LOCAL_ASEPRITE_ICON_NAME)
+        );
     }
 }

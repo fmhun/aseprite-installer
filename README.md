@@ -58,13 +58,15 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-Create application icons from the original project artwork:
+The editable SVG sources and web PNG exports live in `assets/icons/`. Regenerate the native installer icon set from the vector master with:
 
 ```bash
-npm run tauri icon assets/icon-master-1024.png
+npm run tauri icon assets/icons/aseprite-installer.svg
 ```
 
-The generated icon is original artwork. It does not use the Aseprite logo, GitHub logo, Octocat, or wordmarks.
+The installer icon uses the open-package variant. Aseprite bundles compiled and managed locally receive the loader-only variant before their ad-hoc signature is applied. Both marks use the exact four-color, dark-framed loader from the interface.
+
+The stepped outer silhouette intentionally references Aseprite's familiar application shape, but the checkerboard, package, and loader artwork are project-specific. No upstream image file, GitHub logo, Octocat, or wordmark is bundled. This remains an unofficial, unaffiliated project.
 
 The interface uses an original pixel-art design system inspired by the general visual language of pixel editors: integer-pixel borders, compact controls, checkerboard workspaces, and explicit raised/pressed states. It does not include or redistribute Aseprite's theme files, fonts, spritesheet, icons, or other visual assets.
 
@@ -100,7 +102,7 @@ Fonctions principales :
 - diagnostic Xcode/SDK/CMake/Ninja et espace disque ;
 - compilation annulable avec journal en direct ;
 - installation sûre dans `~/Applications`, sauvegarde, restauration et Corbeille ;
-- interface française ou anglaise selon la langue de macOS.
+- interface en anglais pour cette première version macOS.
 
 Pour développer :
 

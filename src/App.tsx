@@ -7,15 +7,24 @@ import type {
   InstallerError,
   OperationProgress,
   PreflightReport,
+  Prerequisite,
   ReleaseInfo,
 } from "./types";
+import { AppFooter } from "./components/AppFooter";
+import { LoadingIndicator } from "./components/LoadingIndicator";
+import { Modal, PixelDocumentIcon } from "./components/Modal";
+import { PrerequisiteHelpModal } from "./components/PrerequisiteHelpModal";
+import { withMinimumDuration } from "./timing";
 import { compareVersions } from "./version";
+import { useFixedWindowHeight } from "./windowSizing";
 
 const EULA_URL = "https://github.com/aseprite/aseprite/blob/main/EULA.txt";
-const ASEPRITE_URL = "https://www.aseprite.org/";
-const PROJECT_URL = "https://github.com/fmhun/asprite-installer";
 
 type View = "status" | "release" | "preflight" | "install";
+type PendingAction = {
+  kind: "restore" | "uninstall";
+  installation: InstallationInfo;
+};
 
 const initialProgress: OperationProgress = {
   stage: "idle",
@@ -51,6 +60,7 @@ function installationPriority(installation: InstallationInfo): number {
 }
 
 function App() {
+  useFixedWindowHeight();
   const t = useMemo(() => createTranslator(getLocale()), []);
   const [view, setView] = useState<View>("status");
   const [installations, setInstallations] = useState<InstallationInfo[]>([]);
@@ -72,12 +82,18 @@ function App() {
   const [logs, setLogs] = useState<string[]>([]);
   const [showEula, setShowEula] = useState(false);
   const [eulaAccepted, setEulaAccepted] = useState(false);
+  const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [helpPrerequisite, setHelpPrerequisite] = useState<Prerequisite | null>(null);
 
   const refreshInstallations = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
     setError(null);
     try {
-      setInstallations(await api.scanInstallations());
+      const scan = api.scanInstallations();
+      setInstallations(
+        await (showSpinner ? withMinimumDuration(scan) : scan),
+      );
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -93,7 +109,9 @@ function App() {
     setReleaseLoading(true);
     setError(null);
     try {
-      const releaseData = await api.listReleases(includePrereleases);
+      const releaseData = await withMinimumDuration(
+        api.listReleases(includePrereleases),
+      );
       setReleases(releaseData);
       setSelectedTag((current) => {
         if (releaseData.some((release) => release.tag === current)) {
@@ -122,6 +140,7 @@ function App() {
   );
   const primaryInstallation = sortedInstallations[0] ?? null;
   const otherInstallations = sortedInstallations.slice(1);
+  const hasMultipleInstallations = sortedInstallations.length > 1;
   const selectedRelease = releases.find((release) => release.tag === selectedTag);
 
   const actionLabel = useMemo(() => {
@@ -138,6 +157,7 @@ function App() {
     setPreflight(null);
     setError(null);
     setNotice(null);
+    setReleaseLoading(true);
     setView("release");
   };
 
@@ -146,7 +166,23 @@ function App() {
     setPreflightLoading(true);
     setError(null);
     try {
-      setPreflight(await api.runPreflight());
+      setPreflight(await withMinimumDuration(api.runPreflight()));
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setPreflightLoading(false);
+    }
+  };
+
+  const confirmPreflight = async () => {
+    setPreflightLoading(true);
+    setError(null);
+    try {
+      const refreshedPreflight = await withMinimumDuration(api.runPreflight());
+      setPreflight(refreshedPreflight);
+      if (!refreshedPreflight.ready) return;
+      setEulaAccepted(false);
+      setShowEula(true);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -193,8 +229,15 @@ function App() {
       }));
       await refreshInstallations(false);
     } catch (caught) {
-      setError(errorMessage(caught));
-      setProgress((current) => ({ ...current, stage: "failed" }));
+      const message = errorMessage(caught);
+      setProgress((current) => ({
+        ...current,
+        stage: "failed",
+        percent: current.percent === null ? 0 : Math.min(100, Math.max(0, current.percent)),
+        message,
+        logLine: null,
+      }));
+      setLogs((current) => [...current.slice(-499), `ERROR: ${message}`]);
     } finally {
       setBusy(false);
     }
@@ -204,7 +247,7 @@ function App() {
     setInstallingTools(true);
     setError(null);
     try {
-      setPreflight(await api.installBuildTools());
+      setPreflight(await withMinimumDuration(api.installBuildTools()));
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -212,31 +255,25 @@ function App() {
     }
   };
 
-  const restore = async (installation: InstallationInfo) => {
-    if (!window.confirm(t("confirmRestore"))) return;
+  const confirmManagedAction = async () => {
+    if (!pendingAction) return;
+    const { kind, installation } = pendingAction;
     setBusy(true);
     setError(null);
+    setNotice(null);
+    setActionError(null);
     try {
-      await api.restorePrevious(installation.id);
-      setNotice(t("restoreComplete"));
+      if (kind === "restore") {
+        await api.restorePrevious(installation.id);
+        setNotice(t("restoreComplete"));
+      } else {
+        await api.uninstallManaged(installation.id);
+        setNotice(t("uninstallComplete"));
+      }
       await refreshInstallations(false);
+      setPendingAction(null);
     } catch (caught) {
-      setError(errorMessage(caught));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const uninstall = async (installation: InstallationInfo) => {
-    if (!window.confirm(t("confirmUninstall"))) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await api.uninstallManaged(installation.id);
-      setNotice(t("uninstallComplete"));
-      await refreshInstallations(false);
-    } catch (caught) {
-      setError(errorMessage(caught));
+      setActionError(errorMessage(caught));
     } finally {
       setBusy(false);
     }
@@ -263,10 +300,9 @@ function App() {
 
   if (loading) {
     return (
-      <main className="loading-screen">
-        <img src="/icon.png" alt="" />
-        <div className="spinner" aria-hidden="true" />
-        <p>{t("checkingInstallation")}</p>
+      <main className="app-shell loading-layout">
+        <LoadingIndicator label={t("checkingInstallation")} screen />
+        <AppFooter />
       </main>
     );
   }
@@ -276,10 +312,7 @@ function App() {
       <header className="app-header compact-header">
         <div className="brand">
           <img className="app-icon" src="/icon.png" alt="" />
-          <div>
-            <div className="eyebrow">{t("unofficial")}</div>
-            <h1>Aseprite Installer</h1>
-          </div>
+          <h1>Aseprite Installer</h1>
         </div>
       </header>
 
@@ -320,9 +353,6 @@ function App() {
             <>
               <div className="status-symbol success-symbol" aria-hidden="true">✓</div>
               <div className="status-copy">
-                <span className={`channel ${primaryInstallation.channel}`}>
-                  {t(primaryInstallation.channel)}
-                </span>
                 <h2>{t("alreadyInstalled")}</h2>
                 <p className="version-line">
                   Aseprite {primaryInstallation.version?.replace(/^v/, "") ?? t("unknownVersion")}
@@ -365,22 +395,19 @@ function App() {
                     {t("reveal")}
                   </button>
                   {primaryInstallation.channel === "managed" && primaryInstallation.hasBackup && (
-                    <button className="button ghost compact" disabled={busy} onClick={() => void restore(primaryInstallation)}>
+                    <button className="button ghost compact" disabled={busy} onClick={() => { setActionError(null); setPendingAction({ kind: "restore", installation: primaryInstallation }); }}>
                       {t("restore")}
                     </button>
                   )}
                   {primaryInstallation.channel === "managed" && (
-                    <button className="button danger ghost compact" disabled={busy} onClick={() => void uninstall(primaryInstallation)}>
+                    <button className="button danger ghost compact" disabled={busy} onClick={() => { setActionError(null); setPendingAction({ kind: "uninstall", installation: primaryInstallation }); }}>
                       {t("uninstall")}
                     </button>
                   )}
                   <button className="button ghost compact" onClick={() => void cleanCache()}>{t("cleanCache")}</button>
-                  <button className="button ghost compact" disabled={busy} onClick={() => void refreshInstallations()}>{t("refresh")}</button>
-                  <button className="button ghost compact" onClick={() => void api.openExternal(ASEPRITE_URL)}>Aseprite ↗</button>
-                  <button className="button ghost compact" onClick={() => void api.openExternal(PROJECT_URL)}>GitHub ↗</button>
                 </div>
               </details>
-              {otherInstallations.length > 0 && (
+              {hasMultipleInstallations && (
                 <details className="other-installations">
                   <summary>{t("otherInstallations", { count: String(otherInstallations.length) })}</summary>
                   {otherInstallations.map((installation) => (
@@ -408,9 +435,6 @@ function App() {
                 <summary>{t("moreOptions")}</summary>
                 <div>
                   <button className="button ghost compact" onClick={() => void cleanCache()}>{t("cleanCache")}</button>
-                  <button className="button ghost compact" onClick={() => void refreshInstallations()}>{t("refresh")}</button>
-                  <button className="button ghost compact" onClick={() => void api.openExternal(ASEPRITE_URL)}>Aseprite ↗</button>
-                  <button className="button ghost compact" onClick={() => void api.openExternal(PROJECT_URL)}>GitHub ↗</button>
                 </div>
               </details>
             </>
@@ -421,13 +445,13 @@ function App() {
       {view === "release" && (
         <section className="context-card flow-view">
           <div className="flow-heading">
-            <button className="back-button" onClick={returnToStatus}>← {t("back")}</button>
+            <button className="back-button" onClick={returnToStatus}>{"<"} {t("back")}</button>
             <span className="step-label">{t("stepOf", { current: "1", total: "3" })}</span>
             <h2>{t("chooseVersionTitle")}</h2>
             <p>{t("chooseVersionBody")}</p>
           </div>
-          {releaseLoading && releases.length === 0 ? (
-            <div className="inline-loading"><div className="spinner" />{t("loadingReleases")}</div>
+          {releaseLoading ? (
+            <LoadingIndicator label={t("loadingReleases")} />
           ) : (
             <>
               <label className="field-label" htmlFor="release">{t("selectRelease")}</label>
@@ -442,7 +466,7 @@ function App() {
               </select>
               {selectedRelease && (
                 <div className="release-summary">
-                  <span>{new Date(selectedRelease.publishedAt).toLocaleDateString()}</span>
+                  <span>{new Date(selectedRelease.publishedAt).toLocaleDateString("en-US")}</span>
                   <span>{formatBytes(selectedRelease.size)}</span>
                   <span className="checksum">SHA-256 ✓</span>
                 </div>
@@ -462,20 +486,30 @@ function App() {
       {view === "preflight" && (
         <section className="context-card flow-view">
           <div className="flow-heading">
-            <button className="back-button" onClick={() => setView("release")}>← {t("back")}</button>
+            <button className="back-button" onClick={() => setView("release")}>{"<"} {t("back")}</button>
             <span className="step-label">{t("stepOf", { current: "2", total: "3" })}</span>
             <h2>{t("checkToolsTitle")}</h2>
             <p>{t("checkToolsBody")}</p>
           </div>
           {preflightLoading ? (
-            <div className="inline-loading"><div className="spinner" />{t("checkingTools")}</div>
+            <LoadingIndicator label={t("checkingTools")} />
           ) : preflight ? (
             <>
               <ul className="check-list single-column">
                 {preflight.prerequisites.map((item) => (
                   <li className={item.ok ? "ok" : "missing"} key={item.id}>
                     <span className="check-mark">{item.ok ? "✓" : "!"}</span>
-                    <div><strong>{item.label}</strong><small>{item.detail}</small></div>
+                    <div className="check-copy"><strong>{item.label}</strong><small title={item.detail}>{item.detail}</small></div>
+                    {!item.ok && (
+                      <button
+                        className="manual-help-trigger"
+                        type="button"
+                        onClick={() => setHelpPrerequisite(item)}
+                      >
+                        <span aria-hidden="true">?</span>
+                        {t("installManually")}
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -487,10 +521,10 @@ function App() {
               {!preflight.ready && <p className="blocking-note">{t("fixRequirements")}</p>}
               <button
                 className="button primary full next-button"
-                disabled={!preflight.ready || installingTools}
-                onClick={() => { setEulaAccepted(false); setShowEula(true); }}
+                disabled={installingTools}
+                onClick={() => void confirmPreflight()}
               >
-                {actionLabel} →
+                {preflight.ready ? `${actionLabel} →` : `${t("checkAgain")} ↻`}
               </button>
             </>
           ) : null}
@@ -519,32 +553,44 @@ function App() {
                 <h2>{progress.stage === "failed" ? t("installFailed") : t("installingTitle")}</h2>
                 <p>{progress.message || t("preparingBuild")}</p>
               </div>
-              <div className="progress-copy"><strong>{progress.percent === null ? "…" : `${progress.percent}%`}</strong></div>
-              <div className="progress-track" role="progressbar" aria-valuenow={progress.percent ?? undefined}>
-                <div className={progress.percent === null ? "indeterminate" : ""} style={{ width: progress.percent === null ? "35%" : `${progress.percent}%` }} />
+              <div className="progress-copy"><strong>{progress.percent === null && busy ? "…" : `${Math.min(100, Math.max(0, progress.percent ?? 0))}%`}</strong></div>
+              <div className="progress-track" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.percent ?? undefined}>
+                <div
+                  className={progress.percent === null && busy ? "indeterminate" : ""}
+                  style={{ width: progress.percent === null && busy ? "35%" : `${Math.min(100, Math.max(0, progress.percent ?? 0))}%` }}
+                />
               </div>
               <p className="build-note">{t("buildingCanTake")}</p>
               <div className="progress-buttons">
                 {busy ? (
                   <button className="button danger ghost" onClick={() => void api.cancelOperation()}>{t("cancel")}</button>
+                ) : progress.stage === "failed" ? (
+                  <>
+                    <button className="button primary" onClick={() => void startInstall()}>{t("retry")}</button>
+                    <button className="button ghost" onClick={() => setView("preflight")}>{"<"} {t("back")}</button>
+                  </>
                 ) : (
-                  <button className="button ghost" onClick={() => setView("preflight")}>← {t("back")}</button>
+                  <button className="button ghost" onClick={() => setView("preflight")}>{"<"} {t("back")}</button>
                 )}
               </div>
-              <details className="logs" open={progress.stage === "failed"}>
-                <summary>{t("logs")}</summary>
-                <pre>{logs.join("\n") || "…"}</pre>
-              </details>
+              <section className="logs" aria-labelledby="logs-title">
+                <h3 id="logs-title">{t("logs")}</h3>
+                <pre aria-live="polite">{logs.join("\n") || "…"}</pre>
+              </section>
             </>
           )}
         </section>
       )}
 
+      <AppFooter />
+
       {showEula && (
-        <div className="modal-backdrop" role="presentation">
-          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="legal-title">
-            <button className="modal-close" aria-label={t("close")} onClick={() => setShowEula(false)}>×</button>
-            <span className="modal-icon" aria-hidden="true">§</span>
+        <Modal
+          ariaLabelledBy="legal-title"
+          titlebar="PERSONAL BUILD / ASEPRITE"
+          onClose={() => setShowEula(false)}
+        >
+            <span className="modal-icon"><PixelDocumentIcon /></span>
             <h2 id="legal-title">{flowTarget?.channel === "manual" ? t("adoptionTitle") : t("legalTitle")}</h2>
             {flowTarget?.channel === "manual" && <p>{t("adoptionBody")}</p>}
             <p>{t("legalBody")}</p>
@@ -554,8 +600,38 @@ function App() {
               <span>{t("legalConfirm")}</span>
             </label>
             <button className="button primary full" disabled={!eulaAccepted} onClick={() => void startInstall()}>{t("continue")} →</button>
-          </section>
-        </div>
+        </Modal>
+      )}
+
+      {pendingAction && (
+        <Modal
+          ariaLabelledBy="confirmation-title"
+          className="confirmation-modal"
+          closeDisabled={busy}
+          titlebar="CONFIRM ACTION / ASEPRITE"
+          onClose={() => { setActionError(null); setPendingAction(null); }}
+        >
+            <span className="modal-icon" aria-hidden="true">{pendingAction.kind === "restore" ? "↺" : "×"}</span>
+            <h2 id="confirmation-title">{t(pendingAction.kind === "restore" ? "restoreTitle" : "uninstallTitle")}</h2>
+            <p>{t(pendingAction.kind === "restore" ? "confirmRestore" : "confirmUninstall")}</p>
+            <p className="confirmation-path" title={pendingAction.installation.path}>{pendingAction.installation.path}</p>
+            {actionError && <p className="confirmation-error" role="alert">{actionError}</p>}
+            <div className="confirmation-actions">
+              <button className="button ghost" disabled={busy} onClick={() => { setActionError(null); setPendingAction(null); }}>{t("cancel")}</button>
+              <button className={`button ${pendingAction.kind === "uninstall" ? "danger" : "primary"}`} disabled={busy} onClick={() => void confirmManagedAction()}>
+                {busy
+                  ? t(pendingAction.kind === "restore" ? "restoring" : "uninstalling")
+                  : t(pendingAction.kind === "restore" ? "confirmRestoreAction" : "confirmUninstallAction")}
+              </button>
+            </div>
+        </Modal>
+      )}
+
+      {helpPrerequisite && (
+        <PrerequisiteHelpModal
+          prerequisite={helpPrerequisite}
+          onClose={() => setHelpPrerequisite(null)}
+        />
       )}
     </main>
   );
