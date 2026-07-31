@@ -19,6 +19,7 @@ import { compareVersions } from "./version";
 import { useFixedWindowHeight } from "./windowSizing";
 
 const EULA_URL = "https://github.com/aseprite/aseprite/blob/main/EULA.txt";
+const BUY_URL = "https://www.aseprite.org/buy/";
 
 type View = "status" | "release" | "preflight" | "install";
 type PendingAction = {
@@ -367,6 +368,22 @@ function App() {
                   <p className="context-note">{t("externalReadOnly")}</p>
                 )}
               </div>
+              {(primaryInstallation.channel === "managed" ||
+                primaryInstallation.channel === "manual") && (
+                <section className="official-purchase installed-support" aria-labelledby="installed-support-title">
+                  <div className="official-purchase-heading">
+                    <h3 id="installed-support-title">{t("installedSupportTitle")}</h3>
+                    <span>{t("officialCopy")}</span>
+                  </div>
+                  <p>{t("installedSupportBody")}</p>
+                  <button
+                    className="button secondary full"
+                    onClick={() => void api.openExternal(BUY_URL)}
+                  >
+                    {t("supportDevelopment")} ↗
+                  </button>
+                </section>
+              )}
               <div className="primary-actions">
                 <button
                   className="button primary full"
@@ -426,11 +443,26 @@ function App() {
                 <h2>{t("notInstalled")}</h2>
                 <p>{t("notInstalledHint")}</p>
               </div>
+              <section className="official-purchase" aria-labelledby="official-edition-title">
+                <div className="official-purchase-heading">
+                  <h3 id="official-edition-title">{t("officialEdition")}</h3>
+                  <span>{t("recommended")}</span>
+                </div>
+                <p>{t("officialEditionBody")}</p>
+                <button
+                  className="button primary full"
+                  onClick={() => void api.openExternal(BUY_URL)}
+                >
+                  {t("buyOfficial")} ↗
+                </button>
+              </section>
+              <div className="choice-divider"><span>{t("orCompile")}</span></div>
               <div className="primary-actions">
-                <button className="button primary full" onClick={() => startFlow(null)}>
-                  {t("installAseprite")} →
+                <button className="button secondary full" onClick={() => startFlow(null)}>
+                  {t("compilePersonalCopy")} →
                 </button>
               </div>
+              <p className="unofficial-notice">{t("unofficialNotice")}</p>
               <details className="more-options">
                 <summary>{t("moreOptions")}</summary>
                 <div>
@@ -543,6 +575,12 @@ function App() {
               </div>
               <div className="primary-actions">
                 <button className="button primary full" onClick={() => void api.launchInstallation(completedInstallation.id)}>▶ {t("openAseprite")}</button>
+                <section className="post-install-support" aria-label={t("supportTitle")}>
+                  <p>{t("supportAfterInstall")}</p>
+                  <button className="button secondary full" onClick={() => void api.openExternal(BUY_URL)}>
+                    {t("supportDevelopment")} ↗
+                  </button>
+                </section>
                 <button className="button ghost full" onClick={returnToStatus}>{t("done")}</button>
               </div>
             </>
@@ -595,6 +633,13 @@ function App() {
             {flowTarget?.channel === "manual" && <p>{t("adoptionBody")}</p>}
             <p>{t("legalBody")}</p>
             <button className="text-link" onClick={() => void api.openExternal(EULA_URL)}>{t("readEula")} ↗</button>
+            <section className="legal-support" aria-labelledby="support-title">
+              <h3 id="support-title">{t("supportTitle")}</h3>
+              <p>{t("supportBody")}</p>
+              <button className="button secondary full" onClick={() => void api.openExternal(BUY_URL)}>
+                {t("buyInstead")} ↗
+              </button>
+            </section>
             <label className="consent">
               <input type="checkbox" checked={eulaAccepted} onChange={(event) => setEulaAccepted(event.target.checked)} />
               <span>{t("legalConfirm")}</span>

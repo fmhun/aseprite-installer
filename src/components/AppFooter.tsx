@@ -1,7 +1,7 @@
 import { api } from "../api";
 
 const LINKS = [
-  { label: "Aseprite", url: "https://www.aseprite.org/" },
+  { label: "Buy Aseprite", url: "https://www.aseprite.org/buy/" },
   { label: "Aseprite on GitHub", url: "https://github.com/aseprite/aseprite" },
   {
     label: "Aseprite Installer on GitHub",

@@ -315,6 +315,104 @@ summary:focus-visible {
   margin-top: 16px;
 }
 
+.official-purchase {
+  width: min(430px, 100%);
+  margin-top: 17px;
+  padding: 12px;
+  outline: 2px solid var(--accent-dark);
+  background: var(--workspace);
+  box-shadow:
+    inset 2px 2px 0 var(--edge-mid),
+    inset -2px -2px 0 var(--edge-dark),
+    3px 3px 0 var(--shadow);
+  text-align: left;
+}
+
+.official-purchase-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.official-purchase h3,
+.legal-support h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
+}
+
+.official-purchase-heading span {
+  padding: 2px 6px;
+  outline: 1px solid var(--accent-dark);
+  color: var(--sunken);
+  background: var(--accent);
+  font-size: var(--type-micro);
+  font-weight: 700;
+  line-height: var(--leading-micro);
+  text-transform: uppercase;
+}
+
+.official-purchase p,
+.post-install-support p,
+.legal-support p {
+  margin: 7px 0 11px;
+  color: var(--muted);
+  font-size: var(--type-label);
+  line-height: var(--leading-label);
+}
+
+.installed-support {
+  margin-top: 15px;
+}
+
+.choice-divider {
+  display: flex;
+  width: min(430px, 100%);
+  align-items: center;
+  gap: 9px;
+  margin: 15px 0 0;
+  color: var(--faint);
+  font-size: var(--type-caption);
+  line-height: var(--leading-caption);
+}
+
+.choice-divider::before,
+.choice-divider::after {
+  height: 2px;
+  flex: 1 1 auto;
+  background: repeating-linear-gradient(90deg, var(--edge-mid) 0 4px, transparent 4px 7px);
+  content: "";
+}
+
+.choice-divider + .primary-actions {
+  margin-top: 12px;
+}
+
+.unofficial-notice {
+  max-width: 430px;
+  margin: 12px 0 0;
+  color: var(--faint);
+  font-size: var(--type-caption);
+  line-height: var(--leading-caption);
+}
+
+.post-install-support {
+  margin: 4px 0;
+  padding: 11px;
+  outline: 1px solid var(--edge-dark);
+  background: var(--workspace);
+  box-shadow:
+    inset 1px 1px 0 var(--edge-mid),
+    inset -1px -1px 0 var(--edge-dark);
+  text-align: left;
+}
+
+.post-install-support p {
+  margin-top: 0;
+}
+
 .button {
   position: relative;
   display: inline-flex;
@@ -1066,6 +1164,20 @@ select {
 
 .text-link:hover {
   color: var(--accent);
+}
+
+.legal-support {
+  margin-top: 13px;
+  padding: 11px;
+  outline: 1px solid var(--accent-dark);
+  background: var(--workspace);
+  box-shadow:
+    inset 1px 1px 0 var(--edge-mid),
+    inset -1px -1px 0 var(--edge-dark);
+}
+
+.legal-support p {
+  margin-bottom: 10px;
 }
 
 .consent {

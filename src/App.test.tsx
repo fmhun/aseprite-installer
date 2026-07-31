@@ -97,7 +97,7 @@ const managedInstallation = {
 
 async function reachInstallConfirmation() {
   fireEvent.click(
-    await screen.findByRole("button", { name: /^Install Aseprite/ }),
+    await screen.findByRole("button", { name: /^Compile a personal copy/ }),
   );
   fireEvent.click(
     await screen.findByRole("button", { name: /^Check requirements/ }),
@@ -138,16 +138,21 @@ describe("Aseprite Installer contextual flow", () => {
       screen.queryByText(/SHA-256/),
     ).not.toBeInTheDocument();
     expect(screen.getByRole("contentinfo", { name: "Project links" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Aseprite" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Buy official Aseprite — $19.99+ ↗" })).toBeInTheDocument();
+    expect(screen.getByText("Recommended")).toBeInTheDocument();
+    expect(screen.getByText(/not a free edition of Aseprite/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Buy Aseprite" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Aseprite on GitHub" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Aseprite Installer on GitHub" })).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "Aseprite" }));
+    fireEvent.click(screen.getByRole("button", { name: "Buy official Aseprite — $19.99+ ↗" }));
+    fireEvent.click(screen.getByRole("button", { name: "Buy Aseprite" }));
     fireEvent.click(screen.getByRole("button", { name: "Aseprite on GitHub" }));
     fireEvent.click(screen.getByRole("button", { name: "Aseprite Installer on GitHub" }));
-    expect(api.openExternal).toHaveBeenNthCalledWith(1, "https://www.aseprite.org/");
-    expect(api.openExternal).toHaveBeenNthCalledWith(2, "https://github.com/aseprite/aseprite");
-    expect(api.openExternal).toHaveBeenNthCalledWith(3, "https://github.com/fmhun/asprite-installer");
+    expect(api.openExternal).toHaveBeenNthCalledWith(1, "https://www.aseprite.org/buy/");
+    expect(api.openExternal).toHaveBeenNthCalledWith(2, "https://www.aseprite.org/buy/");
+    expect(api.openExternal).toHaveBeenNthCalledWith(3, "https://github.com/aseprite/aseprite");
+    expect(api.openExternal).toHaveBeenNthCalledWith(4, "https://github.com/fmhun/asprite-installer");
   });
 
   it("shows a minimal installed state before entering the reinstall flow", async () => {
@@ -165,6 +170,12 @@ describe("Aseprite Installer contextual flow", () => {
         name: "Manage this installation",
       }),
     ).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Support Aseprite" })).toBeInTheDocument();
+    expect(screen.getByText(/If this is a personal source build/)).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Support Aseprite development ↗" }),
+    );
+    expect(api.openExternal).toHaveBeenCalledWith("https://www.aseprite.org/buy/");
     expect(api.listReleases).not.toHaveBeenCalled();
     expect(api.runPreflight).not.toHaveBeenCalled();
   });
@@ -172,7 +183,7 @@ describe("Aseprite Installer contextual flow", () => {
   it("loads releases and requirements only when their steps are opened", async () => {
     render(<App />);
     const installButton = await screen.findByRole("button", {
-      name: /^Install Aseprite/,
+      name: /^Compile a personal copy/,
     });
     fireEvent.click(installButton);
 
@@ -209,7 +220,7 @@ describe("Aseprite Installer contextual flow", () => {
     render(<App />);
 
     fireEvent.click(
-      await screen.findByRole("button", { name: /^Install Aseprite/ }),
+      await screen.findByRole("button", { name: /^Compile a personal copy/ }),
     );
     fireEvent.click(
       await screen.findByRole("button", { name: /^Check requirements/ }),
@@ -232,7 +243,7 @@ describe("Aseprite Installer contextual flow", () => {
     render(<App />);
 
     fireEvent.click(
-      await screen.findByRole("button", { name: /^Install Aseprite/ }),
+      await screen.findByRole("button", { name: /^Compile a personal copy/ }),
     );
     fireEvent.click(
       await screen.findByRole("button", { name: /^Check requirements/ }),
@@ -245,6 +256,33 @@ describe("Aseprite Installer contextual flow", () => {
     expect(screen.queryByRole("dialog", { name: "Personal-use compilation" })).not.toBeInTheDocument();
     expect(await screen.findByText("Not found")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Check again/ })).toBeEnabled();
+  });
+
+  it("offers the official purchase path in the personal-build confirmation", async () => {
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Compile a personal copy/ }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Check requirements/ }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Compile and install/ }),
+    );
+
+    const dialog = await screen.findByRole("dialog", {
+      name: "Personal-use compilation",
+    });
+    expect(
+      within(dialog).getByText("Support the people who make Aseprite"),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Buy the official version instead ↗",
+      }),
+    );
+    expect(api.openExternal).toHaveBeenCalledWith("https://www.aseprite.org/buy/");
   });
 
   it("stops a failed installation and offers a working retry", async () => {
@@ -269,6 +307,11 @@ describe("Aseprite Installer contextual flow", () => {
     expect(
       await screen.findByRole("heading", { name: "Aseprite is ready" }),
     ).toBeInTheDocument();
+    expect(screen.getByText(/consider buying an official copy/)).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Support Aseprite development ↗" }),
+    );
+    expect(api.openExternal).toHaveBeenCalledWith("https://www.aseprite.org/buy/");
     expect(api.startInstall).toHaveBeenCalledTimes(2);
   });
 

@@ -15,3 +15,4 @@ All notable changes to Aseprite Installer are documented here.
 - Pixel-art installer icon plus a dedicated icon for locally managed Aseprite bundles.
 - Self-hosted Pixelify Sans interface typography with improved small-text readability.
 - Accessible typography scale with 14 px body text and 12 px minimum functional text.
+- Official-purchase path and development-support reminders before, during, and after personal source compilation.

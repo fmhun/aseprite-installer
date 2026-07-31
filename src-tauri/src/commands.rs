@@ -397,6 +397,7 @@ mod tests {
     #[test]
     fn restricts_external_links_to_approved_documentation() {
         for url in [
+            "https://www.aseprite.org/buy/",
             "https://github.com/aseprite/aseprite/blob/main/INSTALL.md",
             "https://github.com/ninja-build/ninja/releases",
             "https://developer.apple.com/documentation/xcode/installing-the-command-line-tools",

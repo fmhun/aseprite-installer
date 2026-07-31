@@ -5,6 +5,8 @@ An unofficial macOS utility that compiles and manages a personal Aseprite instal
 > [!IMPORTANT]
 > Aseprite is not distributed under a conventional open-source license. Its EULA allows you to compile and modify the source code for your own personal purpose, but it does not allow third-party redistribution of compiled Aseprite binaries. This project never bundles or publishes Aseprite, its source archive, or its branding.
 
+The official paid edition is the recommended way to get Aseprite: it funds Igara Studio and includes signed packages, automatic updates, a Steam key, and priority support. The installer presents that option before offering a personal source build, links to it again at the EULA confirmation, and gives a final reminder after a successful build. It never describes the locally compiled copy as a free edition.
+
 ## What it does
 
 - Detects managed, manual, Steam, and package-manager Aseprite installations.
@@ -94,6 +96,8 @@ This project is not affiliated with, endorsed by, or supported by Igara Studio o
 **Aseprite Installer** est un utilitaire macOS communautaire et non officiel. Il télécharge une archive source officielle d'Aseprite, vérifie son empreinte SHA-256, la compile sur votre Mac puis gère l'application obtenue.
 
 Aucun binaire Aseprite n'est distribué. Avant la compilation, l'application affiche l'EULA et exige la confirmation que la compilation est destinée à un usage personnel.
+
+L'achat officiel reste la méthode recommandée : il finance Igara Studio et fournit des paquets signés, les mises à jour automatiques, une clé Steam et le support prioritaire. L'installeur présente cette possibilité avant la compilation, dans la confirmation de l'EULA et après une installation réussie. La copie compilée localement n'est jamais présentée comme une édition gratuite.
 
 Fonctions principales :
 

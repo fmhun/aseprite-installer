@@ -9,7 +9,20 @@ const messages = {
   alreadyInstalled: "Aseprite is already installed",
   notInstalled: "Aseprite is not installed",
   notInstalledHint:
-    "The installer can build a verified official source release for your personal use.",
+    "Choose the official package or build a verified source release for your personal use.",
+  officialEdition: "Official version",
+  recommended: "Recommended",
+  officialEditionBody:
+    "Support Igara Studio and get a signed app, automatic updates, a Steam key, and priority email support.",
+  installedSupportTitle: "Support Aseprite",
+  officialCopy: "Official copy",
+  installedSupportBody:
+    "If this is a personal source build, buying an official copy supports Igara Studio and adds signed packages, automatic updates, a Steam key, and priority support.",
+  buyOfficial: "Buy official Aseprite — $19.99+",
+  orCompile: "or compile it locally",
+  compilePersonalCopy: "Compile a personal copy",
+  unofficialNotice:
+    "This installer is not a free edition of Aseprite and is not affiliated with Igara Studio.",
   openAseprite: "Open Aseprite",
   installAseprite: "Install Aseprite",
   changeVersion: "Reinstall or change version",
@@ -64,6 +77,10 @@ const messages = {
   legalTitle: "Personal-use compilation",
   legalBody:
     "Aseprite’s license allows you to compile and modify its source code for your own personal purpose. This installer downloads the selected official source archive and builds it locally; it does not redistribute Aseprite.",
+  supportTitle: "Support the people who make Aseprite",
+  supportBody:
+    "Buying the official version funds continued development and includes signed packages, automatic updates, and priority support.",
+  buyInstead: "Buy the official version instead",
   legalConfirm:
     "I have read the Aseprite EULA and confirm this build is for my personal use.",
   readEula: "Read the Aseprite EULA",
@@ -89,6 +106,9 @@ const messages = {
     "The existing app will be backed up before the selected release replaces it. If its folder is not writable, a managed copy will be installed in ~/Applications instead.",
   buildingCanTake:
     "Compilation can take several minutes and temporarily use 3–6 GB.",
+  supportAfterInstall:
+    "If Aseprite becomes part of your workflow, consider buying an official copy to support its continued development.",
+  supportDevelopment: "Support Aseprite development",
 } as const;
 
 export type MessageKey = keyof typeof messages;
