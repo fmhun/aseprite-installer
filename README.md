@@ -66,6 +66,8 @@ npm run tauri icon assets/icon-master-1024.png
 
 The generated icon is original artwork. It does not use the Aseprite logo, GitHub logo, Octocat, or wordmarks.
 
+The interface uses an original pixel-art design system inspired by the general visual language of pixel editors: integer-pixel borders, compact controls, checkerboard workspaces, and explicit raised/pressed states. It does not include or redistribute Aseprite's theme files, fonts, spritesheet, icons, or other visual assets.
+
 ## Release builds
 
 Tags matching `v*` trigger GitHub Actions builds for Apple Silicon and Intel. The installer is ad-hoc signed until a Developer ID certificate is available, so macOS may require right-clicking the app and choosing **Open** the first time.
@@ -77,6 +79,7 @@ CI builds only Aseprite Installer. It never downloads, compiles, caches, or uplo
 - [Aseprite installation instructions](https://github.com/aseprite/aseprite/blob/main/INSTALL.md)
 - [Aseprite EULA](https://github.com/aseprite/aseprite/blob/main/EULA.txt)
 - [Aseprite releases](https://github.com/aseprite/aseprite/releases)
+- [Aseprite theme documentation](https://www.aseprite.org/docs/extensions/themes/)
 
 This project is not affiliated with, endorsed by, or supported by Igara Studio or GitHub.
 
@@ -105,3 +108,5 @@ npm run tauri dev
 ```
 
 Licence du présent installateur : MIT. Aseprite reste soumis à sa propre EULA.
+
+L'interface possède son propre système visuel pixel-art. Aucun fichier de thème, police, spritesheet, icône ou autre asset visuel d'Aseprite n'est inclus ou redistribué.

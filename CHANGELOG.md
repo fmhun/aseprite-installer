@@ -11,4 +11,5 @@ All notable changes to Aseprite Installer are documented here.
 - Cancellable local compilation with live logs.
 - Atomic installation, adoption backup, rollback, and Trash-based uninstall.
 - French and English interface.
-- Original pixel-art application icon.
+- Context-aware installation flow with dedicated release, prerequisite, and build screens.
+- Original pixel-art application icon and interface design system.
