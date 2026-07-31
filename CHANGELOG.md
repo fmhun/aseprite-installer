@@ -14,3 +14,4 @@ All notable changes to Aseprite Installer are documented here.
 - Context-aware installation flow with dedicated release, prerequisite, and build screens.
 - Original pixel-art application icon and interface design system.
 - Self-hosted Pixelify Sans interface typography with improved small-text readability.
+- Accessible typography scale with 14 px body text and 12 px minimum functional text.

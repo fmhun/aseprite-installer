@@ -36,6 +36,22 @@
   --shadow: #090a0d;
   --checker-a: #1b1e26;
   --checker-b: #1e2129;
+  --type-app-title: 16px;
+  --leading-app-title: 20px;
+  --type-screen-title: 18px;
+  --leading-screen-title: 22px;
+  --type-body: 14px;
+  --leading-body: 20px;
+  --type-control: 14px;
+  --leading-control: 18px;
+  --type-label: 13px;
+  --leading-label: 17px;
+  --type-caption: 12px;
+  --leading-caption: 16px;
+  --type-micro: 11px;
+  --leading-micro: 14px;
+  --type-code: 12px;
+  --leading-code: 17px;
 }
 
 * {
@@ -146,9 +162,10 @@ summary:focus-visible {
 .brand h1 {
   margin: 3px 0 0;
   color: var(--text);
-  font-size: 15px;
-  line-height: 1;
-  letter-spacing: -0.04em;
+  font-size: var(--type-app-title);
+  font-weight: 700;
+  line-height: var(--leading-app-title);
+  letter-spacing: 0;
   text-shadow: 1px 1px 0 var(--edge-dark);
 }
 
@@ -162,10 +179,11 @@ summary:focus-visible {
 
 .eyebrow {
   color: var(--blue);
-  font-size: 9px;
+  font-size: var(--type-micro);
   font-weight: 700;
+  line-height: var(--leading-micro);
   text-transform: uppercase;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.04em;
 }
 
 .context-card {
@@ -226,7 +244,8 @@ summary:focus-visible {
     inset -2px -2px 0 var(--edge-light),
     3px 3px 0 var(--shadow);
   font-size: 22px;
-  font-weight: 900;
+  font-weight: 700;
+  line-height: 22px;
   image-rendering: pixelated;
   text-shadow: 2px 0 0 var(--edge-dark), 0 2px 0 var(--edge-dark);
 }
@@ -243,9 +262,10 @@ summary:focus-visible {
 .flow-heading h2 {
   margin: 8px 0 6px;
   color: var(--text);
-  font-size: 17px;
-  line-height: 1.2;
-  letter-spacing: -0.04em;
+  font-size: var(--type-screen-title);
+  font-weight: 700;
+  line-height: var(--leading-screen-title);
+  letter-spacing: 0;
   text-shadow: 1px 1px 0 var(--edge-dark);
 }
 
@@ -254,8 +274,8 @@ summary:focus-visible {
 .build-note {
   margin: 0;
   color: var(--muted);
-  font-size: 11px;
-  line-height: 1.35;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
 }
 
 .version-line {
@@ -268,7 +288,8 @@ summary:focus-visible {
   margin-top: 5px !important;
   overflow: hidden;
   color: var(--faint) !important;
-  font-size: 10px !important;
+  font-size: var(--type-caption) !important;
+  line-height: var(--leading-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -283,7 +304,8 @@ summary:focus-visible {
   box-shadow:
     inset 1px 1px 0 var(--edge-dark),
     inset -1px -1px 0 var(--edge-mid);
-  font-size: 10px !important;
+  font-size: var(--type-label) !important;
+  line-height: 18px;
 }
 
 .channel {
@@ -296,10 +318,11 @@ summary:focus-visible {
     inset 1px 1px 0 rgba(255, 255, 255, 0.35),
     inset -1px -1px 0 var(--blue-dark),
     1px 1px 0 var(--shadow);
-  font-size: 9px;
-  font-weight: 700;
+  font-size: var(--type-micro);
+  font-weight: 600;
+  line-height: var(--leading-micro);
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.04em;
 }
 
 .channel.manual {
@@ -341,8 +364,9 @@ summary:focus-visible {
     inset 2px 2px 0 var(--edge-light),
     inset -2px -2px 0 var(--edge-dark),
     3px 3px 0 var(--shadow);
-  font-size: 11px;
-  font-weight: 700;
+  font-size: var(--type-control);
+  font-weight: 600;
+  line-height: var(--leading-control);
   cursor: pointer;
   transition: none;
 }
@@ -415,7 +439,8 @@ summary:focus-visible {
 .button.compact {
   min-height: 27px;
   padding: 0 8px;
-  font-size: 10px;
+  font-size: var(--type-caption);
+  line-height: var(--leading-caption);
 }
 
 .button.full {
@@ -430,7 +455,8 @@ summary:focus-visible {
   border-top: 2px dotted var(--edge-mid);
   color: var(--muted);
   text-align: left;
-  font-size: 10px;
+  font-size: var(--type-caption);
+  line-height: var(--leading-caption);
 }
 
 .more-options summary,
@@ -499,7 +525,8 @@ summary:focus-visible {
   justify-items: center;
   gap: 4px;
   color: var(--faint);
-  font-size: 9px;
+  font-size: var(--type-micro);
+  line-height: var(--leading-micro);
   text-transform: uppercase;
 }
 
@@ -527,8 +554,9 @@ summary:focus-visible {
     inset 1px 1px 0 var(--edge-light),
     inset -1px -1px 0 var(--edge-dark),
     2px 2px 0 var(--shadow);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: var(--type-caption);
+  font-weight: 600;
+  line-height: var(--leading-caption);
 }
 
 .stepper .current,
@@ -564,7 +592,9 @@ summary:focus-visible {
   color: var(--muted);
   background: var(--workspace);
   box-shadow: inset 1px 1px 0 var(--edge-mid);
-  font-size: 10px;
+  font-size: var(--type-caption);
+  font-weight: 600;
+  line-height: var(--leading-caption);
 }
 
 .back-button:hover {
@@ -573,18 +603,20 @@ summary:focus-visible {
 
 .step-label {
   color: var(--blue);
-  font-size: 9px;
-  font-weight: 700;
+  font-size: var(--type-micro);
+  font-weight: 600;
+  line-height: var(--leading-micro);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
 }
 
 .field-label {
   display: block;
   margin-bottom: 7px;
   color: var(--text);
-  font-size: 10px;
-  font-weight: 700;
+  font-size: var(--type-label);
+  font-weight: 600;
+  line-height: var(--leading-label);
 }
 
 select {
@@ -609,7 +641,8 @@ select {
     inset 2px 2px 0 var(--edge-dark),
     inset -2px -2px 0 var(--edge-light),
     2px 2px 0 var(--shadow);
-  font-size: 12px;
+  font-size: var(--type-control);
+  line-height: var(--leading-control);
   cursor: pointer;
 }
 
@@ -618,7 +651,8 @@ select {
   gap: 13px;
   margin: 9px 2px 15px;
   color: var(--muted);
-  font-size: 9px;
+  font-size: var(--type-caption);
+  line-height: var(--leading-caption);
 }
 
 .release-summary .checksum {
@@ -637,7 +671,8 @@ select {
   box-shadow:
     inset 1px 1px 0 var(--edge-mid),
     inset -1px -1px 0 var(--edge-dark);
-  font-size: 10px;
+  font-size: var(--type-label);
+  line-height: var(--leading-label);
   cursor: pointer;
 }
 
@@ -685,7 +720,8 @@ select {
   justify-content: center;
   gap: 12px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
 }
 
 .check-list {
@@ -726,8 +762,9 @@ select {
     inset 1px 1px 0 #a3edc1,
     inset -1px -1px 0 var(--green-dark),
     1px 1px 0 var(--shadow);
-  font-size: 9px;
-  font-weight: 900;
+  font-size: var(--type-caption);
+  font-weight: 700;
+  line-height: var(--leading-caption);
 }
 
 .missing .check-mark {
@@ -747,19 +784,23 @@ select {
 }
 
 .check-list strong {
-  font-size: 10px;
+  font-size: var(--type-label);
+  font-weight: 600;
+  line-height: var(--leading-label);
 }
 
 .check-list small {
   margin-top: 2px;
   color: var(--faint);
-  font-size: 9px;
+  font-size: var(--type-caption);
+  line-height: var(--leading-caption);
 }
 
 .blocking-note {
   margin: 10px 0 0;
   color: var(--accent);
-  font-size: 10px;
+  font-size: var(--type-label);
+  line-height: var(--leading-label);
   text-align: center;
 }
 
@@ -770,7 +811,8 @@ select {
 .progress-copy {
   color: var(--accent);
   text-align: right;
-  font-size: 10px;
+  font-size: var(--type-label);
+  line-height: var(--leading-label);
 }
 
 .progress-track {
@@ -816,7 +858,8 @@ select {
   margin-top: 13px;
   border-top: 2px dotted var(--edge-mid);
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--type-caption);
+  line-height: var(--leading-caption);
 }
 
 .logs summary {
@@ -832,8 +875,11 @@ select {
   color: var(--green);
   background: #0c0f12;
   box-shadow: inset 2px 2px 0 #030405;
-  font: 9px/1.45 "Pixelify Sans", Monaco, "Courier New", ui-monospace, monospace;
+  font-family: "Pixelify Sans", Monaco, "Courier New", ui-monospace, monospace;
+  font-size: var(--type-code);
+  font-weight: 400;
   font-variant-numeric: tabular-nums;
+  line-height: var(--leading-code);
   white-space: pre-wrap;
 }
 
@@ -851,7 +897,8 @@ select {
     inset 2px 2px 0 var(--edge-light),
     inset -2px -2px 0 var(--edge-dark),
     3px 3px 0 var(--shadow);
-  font-size: 10px;
+  font-size: var(--type-label);
+  line-height: 18px;
 }
 
 .alert.error {
@@ -917,8 +964,8 @@ select {
     inset -1px -1px 0 var(--edge-dark);
   content: "PERSONAL BUILD / Aseprite";
   color: var(--muted);
-  font-size: 9px;
-  font-weight: 700;
+  font-size: var(--type-micro);
+  font-weight: 600;
   line-height: 24px;
   text-indent: 8px;
   text-transform: uppercase;
@@ -927,14 +974,16 @@ select {
 .modal h2 {
   margin: 11px 0 8px;
   color: var(--text);
-  font-size: 15px;
+  font-size: var(--type-screen-title);
+  font-weight: 700;
+  line-height: var(--leading-screen-title);
   text-shadow: 1px 1px 0 var(--edge-dark);
 }
 
 .modal p {
   color: var(--muted);
-  font-size: 10px;
-  line-height: 1.45;
+  font-size: var(--type-body);
+  line-height: var(--leading-body);
 }
 
 .modal-icon {
@@ -977,8 +1026,9 @@ select {
   color: var(--blue);
   background: transparent;
   cursor: pointer;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: var(--type-control);
+  font-weight: 600;
+  line-height: var(--leading-control);
 }
 
 .text-link:hover {
@@ -998,8 +1048,8 @@ select {
     inset 1px 1px 0 var(--edge-dark),
     inset -1px -1px 0 var(--edge-mid);
   cursor: pointer;
-  font-size: 10px;
-  line-height: 1.4;
+  font-size: var(--type-label);
+  line-height: 18px;
 }
 
 .consent input {
@@ -1013,9 +1063,10 @@ select {
   justify-items: center;
   gap: 13px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--type-label);
+  line-height: var(--leading-label);
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.04em;
 }
 
 .loading-screen img {
