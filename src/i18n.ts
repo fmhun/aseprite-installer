@@ -1,0 +1,162 @@
+const messages = {
+  en: {
+    tagline: "Build Aseprite from official sources, on your Mac.",
+    unofficial: "Unofficial community tool",
+    refresh: "Refresh",
+    checking: "Checking your Mac…",
+    currentInstallations: "Installations",
+    noInstallation: "No Aseprite installation was found.",
+    noInstallationHint:
+      "Choose an official source release below to create your personal build.",
+    managed: "Managed",
+    manual: "Manual",
+    steam: "Steam",
+    packageManager: "Package manager",
+    exactVersion: "Exact version",
+    partialVersion: "Version reported by the app",
+    unknownVersion: "Unknown version",
+    open: "Open",
+    reveal: "Show in Finder",
+    adopt: "Adopt and manage",
+    restore: "Restore previous",
+    uninstall: "Move to Trash",
+    sourceRelease: "Source release",
+    stableOnly: "Stable releases",
+    includePrereleases: "Include beta and RC releases",
+    latest: "Latest",
+    beta: "Pre-release",
+    selectRelease: "Select a release",
+    environment: "Build readiness",
+    ready: "Ready to compile",
+    notReady: "Action required",
+    freeSpace: "Free space",
+    installTools: "Install CMake and Ninja with Homebrew",
+    install: "Compile and install",
+    update: "Compile update",
+    downgrade: "Compile older release",
+    reinstall: "Recompile release",
+    progress: "Build progress",
+    cancel: "Cancel",
+    logs: "Technical log",
+    cache: "Build cache",
+    cleanCache: "Clean cache",
+    cacheCleaned: "Cache cleaned ({size})",
+    legalTitle: "Personal-use compilation",
+    legalBody:
+      "Aseprite’s license allows you to compile and modify its source code for your own personal purpose. This installer downloads the selected official source archive and builds it locally; it does not redistribute Aseprite.",
+    legalConfirm:
+      "I have read the Aseprite EULA and confirm this build is for my personal use.",
+    readEula: "Read the Aseprite EULA",
+    continue: "Accept and start",
+    close: "Close",
+    operationFailed: "The operation could not be completed.",
+    retry: "Try again",
+    confirmUninstall:
+      "Move this managed Aseprite application to the Trash? Your preferences and artwork will not be removed.",
+    confirmRestore:
+      "Replace the current managed application with its previous backup?",
+    installingTools: "Installing build tools…",
+    aboutLinks: "Official resources",
+    asepriteWebsite: "Aseprite website",
+    sourceCode: "Installer source",
+    privacy: "No telemetry. No account required.",
+    externalReadOnly:
+      "This installation is managed by its original channel and is read-only here.",
+    manualHint:
+      "Manual copies can be adopted after an explicit backup and safety check.",
+    adoptionTitle: "Adopt manual installation",
+    adoptionBody:
+      "The existing app will be backed up before the selected release replaces it. If its folder is not writable, a managed copy will be installed in ~/Applications instead.",
+    newestInstalled: "The selected release is already installed.",
+    buildingCanTake: "Compilation usually takes several minutes and needs 3–6 GB temporarily.",
+  },
+  fr: {
+    tagline: "Compilez Aseprite depuis ses sources officielles, sur votre Mac.",
+    unofficial: "Outil communautaire non officiel",
+    refresh: "Actualiser",
+    checking: "Vérification de votre Mac…",
+    currentInstallations: "Installations",
+    noInstallation: "Aucune installation d’Aseprite détectée.",
+    noInstallationHint:
+      "Choisissez ci-dessous une release source officielle pour créer votre compilation personnelle.",
+    managed: "Gérée",
+    manual: "Manuelle",
+    steam: "Steam",
+    packageManager: "Gestionnaire de paquets",
+    exactVersion: "Version exacte",
+    partialVersion: "Version déclarée par l’app",
+    unknownVersion: "Version inconnue",
+    open: "Ouvrir",
+    reveal: "Afficher dans le Finder",
+    adopt: "Adopter et gérer",
+    restore: "Restaurer la précédente",
+    uninstall: "Mettre à la Corbeille",
+    sourceRelease: "Release source",
+    stableOnly: "Releases stables",
+    includePrereleases: "Inclure les bêta et RC",
+    latest: "Dernière",
+    beta: "Préversion",
+    selectRelease: "Choisir une release",
+    environment: "Préparation de la compilation",
+    ready: "Prêt à compiler",
+    notReady: "Action requise",
+    freeSpace: "Espace libre",
+    installTools: "Installer CMake et Ninja avec Homebrew",
+    install: "Compiler et installer",
+    update: "Compiler la mise à jour",
+    downgrade: "Compiler l’ancienne version",
+    reinstall: "Recompiler la release",
+    progress: "Progression",
+    cancel: "Annuler",
+    logs: "Journal technique",
+    cache: "Cache de compilation",
+    cleanCache: "Nettoyer le cache",
+    cacheCleaned: "Cache nettoyé ({size})",
+    legalTitle: "Compilation pour usage personnel",
+    legalBody:
+      "La licence d’Aseprite autorise la compilation et la modification du code source pour votre usage personnel. Cet installateur télécharge l’archive source officielle choisie et la compile localement ; il ne redistribue pas Aseprite.",
+    legalConfirm:
+      "J’ai lu l’EULA d’Aseprite et je confirme que cette compilation est destinée à mon usage personnel.",
+    readEula: "Lire l’EULA d’Aseprite",
+    continue: "Accepter et démarrer",
+    close: "Fermer",
+    operationFailed: "L’opération n’a pas pu aboutir.",
+    retry: "Réessayer",
+    confirmUninstall:
+      "Mettre cette application Aseprite gérée dans la Corbeille ? Vos préférences et créations ne seront pas supprimées.",
+    confirmRestore:
+      "Remplacer l’application gérée actuelle par sa sauvegarde précédente ?",
+    installingTools: "Installation des outils de compilation…",
+    aboutLinks: "Ressources officielles",
+    asepriteWebsite: "Site d’Aseprite",
+    sourceCode: "Sources de l’installateur",
+    privacy: "Aucune télémétrie. Aucun compte requis.",
+    externalReadOnly:
+      "Cette installation reste gérée par son canal d’origine et n’est pas modifiable ici.",
+    manualHint:
+      "Une copie manuelle peut être adoptée après sauvegarde et vérification explicites.",
+    adoptionTitle: "Adopter l’installation manuelle",
+    adoptionBody:
+      "L’application existante sera sauvegardée avant son remplacement par la release choisie. Si son dossier n’est pas inscriptible, une copie gérée sera créée dans ~/Applications.",
+    newestInstalled: "La release choisie est déjà installée.",
+    buildingCanTake:
+      "La compilation prend généralement plusieurs minutes et utilise temporairement 3 à 6 Go.",
+  },
+} as const;
+
+export type Locale = keyof typeof messages;
+export type MessageKey = keyof (typeof messages)["en"];
+
+export function getLocale(): Locale {
+  return navigator.language.toLowerCase().startsWith("fr") ? "fr" : "en";
+}
+
+export function createTranslator(locale: Locale) {
+  return (key: MessageKey, values?: Record<string, string>) => {
+    let value: string = messages[locale][key];
+    for (const [name, replacement] of Object.entries(values ?? {})) {
+      value = value.replace(`{${name}}`, replacement);
+    }
+    return value;
+  };
+}

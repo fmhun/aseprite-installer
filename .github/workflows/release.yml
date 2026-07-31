@@ -1,0 +1,47 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Release (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            target: aarch64-apple-darwin
+          - runner: macos-15-intel
+            target: x86_64-apple-darwin
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - run: npm ci
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: Aseprite Installer v__VERSION__
+          releaseBody: |
+            Unofficial macOS installer that compiles Aseprite locally from verified official source releases.
+
+            This release contains Aseprite Installer only. It does not contain Aseprite binaries, source code, or branding.
+
+            The macOS app is ad-hoc signed. On first launch, right-click the app and choose Open if Gatekeeper displays a warning.
+          releaseDraft: false
+          prerelease: false
+          args: --target ${{ matrix.target }}
