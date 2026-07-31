@@ -13,3 +13,4 @@ All notable changes to Aseprite Installer are documented here.
 - French and English interface.
 - Context-aware installation flow with dedicated release, prerequisite, and build screens.
 - Original pixel-art application icon and interface design system.
+- Self-hosted Pixelify Sans interface typography with improved small-text readability.

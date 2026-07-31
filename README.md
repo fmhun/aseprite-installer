@@ -68,6 +68,8 @@ The generated icon is original artwork. It does not use the Aseprite logo, GitHu
 
 The interface uses an original pixel-art design system inspired by the general visual language of pixel editors: integer-pixel borders, compact controls, checkerboard workspaces, and explicit raised/pressed states. It does not include or redistribute Aseprite's theme files, fonts, spritesheet, icons, or other visual assets.
 
+The bundled UI typeface is [Pixelify Sans](https://fonts.google.com/specimen/Pixelify+Sans), licensed under the SIL Open Font License 1.1. Its license is included next to the font file in `src/assets/fonts/`.
+
 ## Release builds
 
 Tags matching `v*` trigger GitHub Actions builds for Apple Silicon and Intel. The installer is ad-hoc signed until a Developer ID certificate is available, so macOS may require right-clicking the app and choosing **Open** the first time.
@@ -110,3 +112,5 @@ npm run tauri dev
 Licence du présent installateur : MIT. Aseprite reste soumis à sa propre EULA.
 
 L'interface possède son propre système visuel pixel-art. Aucun fichier de thème, police, spritesheet, icône ou autre asset visuel d'Aseprite n'est inclus ou redistribué.
+
+La fonte d'interface embarquée est [Pixelify Sans](https://fonts.google.com/specimen/Pixelify+Sans), distribuée sous SIL Open Font License 1.1. Sa licence accompagne le fichier de fonte dans `src/assets/fonts/`.
