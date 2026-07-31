@@ -11,10 +11,11 @@ import type {
 } from "./types";
 import { compareVersions } from "./version";
 
-const EULA_URL =
-  "https://github.com/aseprite/aseprite/blob/main/EULA.txt";
+const EULA_URL = "https://github.com/aseprite/aseprite/blob/main/EULA.txt";
 const ASEPRITE_URL = "https://www.aseprite.org/";
 const PROJECT_URL = "https://github.com/fmhun/asprite-installer";
+
+type View = "status" | "release" | "preflight" | "install";
 
 const initialProgress: OperationProgress = {
   stage: "idle",
@@ -43,92 +44,129 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
+function installationPriority(installation: InstallationInfo): number {
+  return { managed: 0, manual: 1, steam: 2, packageManager: 3 }[
+    installation.channel
+  ];
+}
+
 function App() {
   const t = useMemo(() => createTranslator(getLocale()), []);
-  const [releases, setReleases] = useState<ReleaseInfo[]>([]);
+  const [view, setView] = useState<View>("status");
   const [installations, setInstallations] = useState<InstallationInfo[]>([]);
+  const [releases, setReleases] = useState<ReleaseInfo[]>([]);
   const [preflight, setPreflight] = useState<PreflightReport | null>(null);
+  const [flowTarget, setFlowTarget] = useState<InstallationInfo | null>(null);
+  const [completedInstallation, setCompletedInstallation] =
+    useState<InstallationInfo | null>(null);
   const [includePrereleases, setIncludePrereleases] = useState(false);
   const [selectedTag, setSelectedTag] = useState("");
   const [loading, setLoading] = useState(true);
+  const [releaseLoading, setReleaseLoading] = useState(false);
+  const [preflightLoading, setPreflightLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [installingTools, setInstallingTools] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [progress, setProgress] =
-    useState<OperationProgress>(initialProgress);
+  const [progress, setProgress] = useState<OperationProgress>(initialProgress);
   const [logs, setLogs] = useState<string[]>([]);
   const [showEula, setShowEula] = useState(false);
   const [eulaAccepted, setEulaAccepted] = useState(false);
-  const [adoption, setAdoption] = useState<InstallationInfo | null>(null);
 
-  const refresh = useCallback(
-    async (showSpinner = true) => {
-      if (showSpinner) setLoading(true);
-      setError(null);
-      try {
-        const [releaseData, installationData, preflightData] =
-          await Promise.all([
-            api.listReleases(includePrereleases),
-            api.scanInstallations(),
-            api.runPreflight(),
-          ]);
-        setReleases(releaseData);
-        setInstallations(installationData);
-        setPreflight(preflightData);
-        setSelectedTag((current) => {
-          if (releaseData.some((release) => release.tag === current)) {
-            return current;
-          }
-          return (
-            releaseData.find((release) => release.latest)?.tag ??
-            releaseData[0]?.tag ??
-            ""
-          );
-        });
-      } catch (caught) {
-        setError(errorMessage(caught));
-      } finally {
-        setLoading(false);
-      }
-    },
-    [includePrereleases],
-  );
+  const refreshInstallations = useCallback(async (showSpinner = true) => {
+    if (showSpinner) setLoading(true);
+    setError(null);
+    try {
+      setInstallations(await api.scanInstallations());
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
-    void refresh();
-  }, [refresh]);
+    void refreshInstallations();
+  }, [refreshInstallations]);
 
-  const selectedRelease = releases.find(
-    (release) => release.tag === selectedTag,
+  const loadReleases = useCallback(async () => {
+    setReleaseLoading(true);
+    setError(null);
+    try {
+      const releaseData = await api.listReleases(includePrereleases);
+      setReleases(releaseData);
+      setSelectedTag((current) => {
+        if (releaseData.some((release) => release.tag === current)) {
+          return current;
+        }
+        return (
+          releaseData.find((release) => release.latest)?.tag ??
+          releaseData[0]?.tag ??
+          ""
+        );
+      });
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setReleaseLoading(false);
+    }
+  }, [includePrereleases]);
+
+  useEffect(() => {
+    if (view === "release") void loadReleases();
+  }, [loadReleases, view]);
+
+  const sortedInstallations = useMemo(
+    () => [...installations].sort((a, b) => installationPriority(a) - installationPriority(b)),
+    [installations],
   );
-  const managed = installations.find(
-    (installation) => installation.channel === "managed",
-  );
+  const primaryInstallation = sortedInstallations[0] ?? null;
+  const otherInstallations = sortedInstallations.slice(1);
+  const selectedRelease = releases.find((release) => release.tag === selectedTag);
 
   const actionLabel = useMemo(() => {
-    if (!managed) return t("install");
-    const comparison = compareVersions(selectedTag, managed.version);
+    if (!flowTarget || flowTarget.channel === "manual") return t("install");
+    const comparison = compareVersions(selectedTag, flowTarget.version);
     if (comparison > 0) return t("update");
     if (comparison < 0) return t("downgrade");
     return t("reinstall");
-  }, [managed, selectedTag, t]);
+  }, [flowTarget, selectedTag, t]);
 
-  const beginConsent = (installation: InstallationInfo | null = null) => {
-    setAdoption(installation);
-    setEulaAccepted(false);
-    setShowEula(true);
+  const startFlow = (target: InstallationInfo | null) => {
+    setFlowTarget(target);
+    setCompletedInstallation(null);
+    setPreflight(null);
+    setError(null);
+    setNotice(null);
+    setView("release");
+  };
+
+  const openPreflight = async () => {
+    setView("preflight");
+    setPreflightLoading(true);
+    setError(null);
+    try {
+      setPreflight(await api.runPreflight());
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setPreflightLoading(false);
+    }
   };
 
   const startInstall = async () => {
     if (!selectedRelease || !eulaAccepted) return;
     const request: InstallRequest = {
       tag: selectedRelease.tag,
-      targetPath: adoption?.path ?? managed?.path ?? null,
-      adopt: Boolean(adoption),
+      targetPath:
+        flowTarget?.channel === "manual" || flowTarget?.channel === "managed"
+          ? flowTarget.path
+          : null,
+      adopt: flowTarget?.channel === "manual",
       eulaAccepted,
     };
     setShowEula(false);
+    setView("install");
     setBusy(true);
     setError(null);
     setNotice(null);
@@ -140,19 +178,25 @@ function App() {
       logLine: null,
     });
     try {
-      await api.startInstall(request, (event) => {
+      const installed = await api.startInstall(request, (event) => {
         setProgress(event);
         if (event.logLine) {
           setLogs((current) => [...current.slice(-499), event.logLine!]);
         }
       });
-      await refresh(false);
+      setCompletedInstallation(installed);
+      setProgress((current) => ({
+        ...current,
+        stage: "completed",
+        percent: 100,
+        message: t("installComplete"),
+      }));
+      await refreshInstallations(false);
     } catch (caught) {
       setError(errorMessage(caught));
       setProgress((current) => ({ ...current, stage: "failed" }));
     } finally {
       setBusy(false);
-      setAdoption(null);
     }
   };
 
@@ -174,7 +218,8 @@ function App() {
     setError(null);
     try {
       await api.restorePrevious(installation.id);
-      await refresh(false);
+      setNotice(t("restoreComplete"));
+      await refreshInstallations(false);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -188,7 +233,8 @@ function App() {
     setError(null);
     try {
       await api.uninstallManaged(installation.id);
-      await refresh(false);
+      setNotice(t("uninstallComplete"));
+      await refreshInstallations(false);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -206,367 +252,308 @@ function App() {
     }
   };
 
-  if (loading && !releases.length && !installations.length) {
+  const returnToStatus = () => {
+    setView("status");
+    setFlowTarget(null);
+    setCompletedInstallation(null);
+    setProgress(initialProgress);
+    setLogs([]);
+    setError(null);
+  };
+
+  if (loading) {
     return (
       <main className="loading-screen">
         <img src="/icon.png" alt="" />
         <div className="spinner" aria-hidden="true" />
-        <p>{t("checking")}</p>
+        <p>{t("checkingInstallation")}</p>
       </main>
     );
   }
 
   return (
     <main className="app-shell">
-      <header className="app-header">
+      <header className="app-header compact-header">
         <div className="brand">
           <img className="app-icon" src="/icon.png" alt="" />
           <div>
             <div className="eyebrow">{t("unofficial")}</div>
             <h1>Aseprite Installer</h1>
-            <p>{t("tagline")}</p>
           </div>
         </div>
-        <button
-          className="button secondary compact"
-          disabled={busy}
-          onClick={() => void refresh()}
-        >
-          ↻ {t("refresh")}
-        </button>
       </header>
+
+      {view !== "status" && view !== "install" && (
+        <nav className="stepper" aria-label={t("installationSteps")}>
+          {(["release", "preflight", "install"] as const).map((step, index) => {
+            const currentIndex = ["release", "preflight", "install"].indexOf(view);
+            return (
+              <div
+                className={`${view === step ? "current" : ""} ${index < currentIndex ? "done" : ""}`}
+                key={step}
+              >
+                <span>{index + 1}</span>
+                <small>{t(step === "release" ? "releaseStep" : step === "preflight" ? "toolsStep" : "installStep")}</small>
+              </div>
+            );
+          })}
+        </nav>
+      )}
 
       {error && (
         <div className="alert error" role="alert">
           <strong>{t("operationFailed")}</strong>
           <span>{error}</span>
-          <button onClick={() => setError(null)}>×</button>
+          <button aria-label={t("close")} onClick={() => setError(null)}>×</button>
         </div>
       )}
       {notice && (
         <div className="alert success" role="status">
           <span>{notice}</span>
-          <button onClick={() => setNotice(null)}>×</button>
+          <button aria-label={t("close")} onClick={() => setNotice(null)}>×</button>
         </div>
       )}
 
-      <section className="panel">
-        <div className="section-heading">
-          <div>
-            <span className="step-number">01</span>
-            <h2>{t("currentInstallations")}</h2>
-          </div>
-          <span className="count">{installations.length}</span>
-        </div>
-
-        {installations.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-pixel" aria-hidden="true">
-              +
-            </div>
-            <div>
-              <strong>{t("noInstallation")}</strong>
-              <p>{t("noInstallationHint")}</p>
-            </div>
-          </div>
-        ) : (
-          <div className="installation-list">
-            {installations.map((installation) => (
-              <article className="installation-card" key={installation.id}>
-                <div className="installation-main">
-                  <span className={`channel ${installation.channel}`}>
-                    {t(installation.channel)}
-                  </span>
-                  <h3>
-                    Aseprite{" "}
-                    <span>
-                      {installation.version
-                        ? installation.version.replace(/^v/, "")
-                        : t("unknownVersion")}
-                    </span>
-                  </h3>
-                  <p className="path" title={installation.path}>
-                    {installation.path}
-                  </p>
-                  <small>
-                    {installation.versionExact
-                      ? t("exactVersion")
-                      : t("partialVersion")}
-                    {installation.architecture
-                      ? ` · ${installation.architecture}`
-                      : ""}
-                  </small>
-                </div>
-                <div className="installation-actions">
-                  <button
-                    className="button ghost"
-                    onClick={() => void api.launchInstallation(installation.id)}
-                  >
-                    ▶ {t("open")}
-                  </button>
-                  <button
-                    className="button ghost"
-                    onClick={() => void api.revealInstallation(installation.id)}
-                  >
-                    ⌖ {t("reveal")}
-                  </button>
-                  {installation.channel === "manual" && (
-                      <button
-                        className="button secondary"
-                        disabled={busy}
-                        onClick={() => beginConsent(installation)}
-                      >
-                        {t("adopt")}
-                      </button>
-                    )}
-                  {installation.channel === "managed" && (
-                    <>
-                      {installation.hasBackup && (
-                        <button
-                          className="button ghost"
-                          disabled={busy}
-                          onClick={() => void restore(installation)}
-                        >
-                          ↶ {t("restore")}
-                        </button>
-                      )}
-                      <button
-                        className="button danger ghost"
-                        disabled={busy}
-                        onClick={() => void uninstall(installation)}
-                      >
-                        {t("uninstall")}
-                      </button>
-                    </>
-                  )}
-                </div>
-                {installation.channel === "manual" && (
-                  <p className="card-note">{t("manualHint")}</p>
-                )}
-                {(installation.channel === "steam" ||
-                  installation.channel === "packageManager") && (
-                  <p className="card-note">{t("externalReadOnly")}</p>
-                )}
-              </article>
-            ))}
-          </div>
-        )}
-      </section>
-
-      <div className="two-column">
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <span className="step-number">02</span>
-              <h2>{t("sourceRelease")}</h2>
-            </div>
-          </div>
-
-          <label className="field-label" htmlFor="release">
-            {t("selectRelease")}
-          </label>
-          <select
-            id="release"
-            value={selectedTag}
-            disabled={busy}
-            onChange={(event) => setSelectedTag(event.target.value)}
-          >
-            {releases.map((release) => (
-              <option key={release.tag} value={release.tag}>
-                {release.tag.replace(/^v/, "")}
-                {release.latest ? ` — ${t("latest")}` : ""}
-                {release.prerelease ? ` — ${t("beta")}` : ""}
-              </option>
-            ))}
-          </select>
-          {selectedRelease && (
-            <div className="release-meta">
-              <span>
-                {new Date(selectedRelease.publishedAt).toLocaleDateString()}
-              </span>
-              <span>{formatBytes(selectedRelease.size)}</span>
-              <span className="checksum">SHA-256 ✓</span>
-            </div>
-          )}
-          <label className="switch-row">
-            <input
-              type="checkbox"
-              checked={includePrereleases}
-              disabled={busy}
-              onChange={(event) =>
-                setIncludePrereleases(event.target.checked)
-              }
-            />
-            <span>
-              <strong>{t("includePrereleases")}</strong>
-            </span>
-          </label>
-        </section>
-
-        <section className="panel">
-          <div className="section-heading">
-            <div>
-              <span className="step-number">03</span>
-              <h2>{t("environment")}</h2>
-            </div>
-            {preflight && (
-              <span className={`status-pill ${preflight.ready ? "ok" : "warn"}`}>
-                {preflight.ready ? t("ready") : t("notReady")}
-              </span>
-            )}
-          </div>
-          {preflight && (
+      {view === "status" && (
+        <section className="context-card status-view">
+          {primaryInstallation ? (
             <>
-              <ul className="check-list">
-                {preflight.prerequisites.map((item) => (
-                  <li className={item.ok ? "ok" : "missing"} key={item.id}>
-                    <span className="check-mark">{item.ok ? "✓" : "!"}</span>
-                    <div>
-                      <strong>{item.label}</strong>
-                      <small>{item.detail}</small>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-              {preflight.homebrewAvailable &&
-                preflight.prerequisites.some(
-                  (item) =>
-                    !item.ok && (item.id === "cmake" || item.id === "ninja"),
-                ) && (
+              <div className="status-symbol success-symbol" aria-hidden="true">✓</div>
+              <div className="status-copy">
+                <span className={`channel ${primaryInstallation.channel}`}>
+                  {t(primaryInstallation.channel)}
+                </span>
+                <h2>{t("alreadyInstalled")}</h2>
+                <p className="version-line">
+                  Aseprite {primaryInstallation.version?.replace(/^v/, "") ?? t("unknownVersion")}
+                  {primaryInstallation.architecture ? ` · ${primaryInstallation.architecture}` : ""}
+                </p>
+                <p className="path" title={primaryInstallation.path}>{primaryInstallation.path}</p>
+                {primaryInstallation.channel === "manual" && (
+                  <p className="context-note">{t("manualStatusHint")}</p>
+                )}
+                {(primaryInstallation.channel === "steam" ||
+                  primaryInstallation.channel === "packageManager") && (
+                  <p className="context-note">{t("externalReadOnly")}</p>
+                )}
+              </div>
+              <div className="primary-actions">
+                <button
+                  className="button primary full"
+                  onClick={() => void api.launchInstallation(primaryInstallation.id)}
+                >
+                  ▶ {t("openAseprite")}
+                </button>
+                {primaryInstallation.channel === "managed" || primaryInstallation.channel === "manual" ? (
                   <button
                     className="button secondary full"
-                    disabled={installingTools || busy}
-                    onClick={() => void installTools()}
+                    disabled={busy}
+                    onClick={() => startFlow(primaryInstallation)}
                   >
-                    {installingTools ? t("installingTools") : t("installTools")}
+                    {primaryInstallation.channel === "manual" ? t("manageInstallation") : t("changeVersion")}
+                  </button>
+                ) : (
+                  <button className="button secondary full" onClick={() => startFlow(null)}>
+                    {t("installSeparateCopy")}
                   </button>
                 )}
+              </div>
+              <details className="more-options">
+                <summary>{t("moreOptions")}</summary>
+                <div>
+                  <button className="button ghost compact" onClick={() => void api.revealInstallation(primaryInstallation.id)}>
+                    {t("reveal")}
+                  </button>
+                  {primaryInstallation.channel === "managed" && primaryInstallation.hasBackup && (
+                    <button className="button ghost compact" disabled={busy} onClick={() => void restore(primaryInstallation)}>
+                      {t("restore")}
+                    </button>
+                  )}
+                  {primaryInstallation.channel === "managed" && (
+                    <button className="button danger ghost compact" disabled={busy} onClick={() => void uninstall(primaryInstallation)}>
+                      {t("uninstall")}
+                    </button>
+                  )}
+                  <button className="button ghost compact" onClick={() => void cleanCache()}>{t("cleanCache")}</button>
+                  <button className="button ghost compact" disabled={busy} onClick={() => void refreshInstallations()}>{t("refresh")}</button>
+                  <button className="button ghost compact" onClick={() => void api.openExternal(ASEPRITE_URL)}>Aseprite ↗</button>
+                  <button className="button ghost compact" onClick={() => void api.openExternal(PROJECT_URL)}>GitHub ↗</button>
+                </div>
+              </details>
+              {otherInstallations.length > 0 && (
+                <details className="other-installations">
+                  <summary>{t("otherInstallations", { count: String(otherInstallations.length) })}</summary>
+                  {otherInstallations.map((installation) => (
+                    <div className="other-installation" key={installation.id}>
+                      <span>{t(installation.channel)} · Aseprite {installation.version?.replace(/^v/, "") ?? "?"}</span>
+                      <button onClick={() => void api.launchInstallation(installation.id)}>{t("open")}</button>
+                    </div>
+                  ))}
+                </details>
+              )}
+            </>
+          ) : (
+            <>
+              <div className="status-symbol" aria-hidden="true">+</div>
+              <div className="status-copy">
+                <h2>{t("notInstalled")}</h2>
+                <p>{t("notInstalledHint")}</p>
+              </div>
+              <div className="primary-actions">
+                <button className="button primary full" onClick={() => startFlow(null)}>
+                  {t("installAseprite")} →
+                </button>
+              </div>
+              <details className="more-options">
+                <summary>{t("moreOptions")}</summary>
+                <div>
+                  <button className="button ghost compact" onClick={() => void cleanCache()}>{t("cleanCache")}</button>
+                  <button className="button ghost compact" onClick={() => void refreshInstallations()}>{t("refresh")}</button>
+                  <button className="button ghost compact" onClick={() => void api.openExternal(ASEPRITE_URL)}>Aseprite ↗</button>
+                  <button className="button ghost compact" onClick={() => void api.openExternal(PROJECT_URL)}>GitHub ↗</button>
+                </div>
+              </details>
             </>
           )}
         </section>
-      </div>
+      )}
 
-      <section className={`action-panel ${busy ? "is-busy" : ""}`}>
-        {busy ? (
-          <>
-            <div className="progress-copy">
-              <div>
-                <span className="pulse" aria-hidden="true" />
-                <strong>{progress.message || t("progress")}</strong>
-              </div>
-              <span>
-                {progress.percent === null ? "…" : `${progress.percent}%`}
-              </span>
-            </div>
-            <div
-              className="progress-track"
-              role="progressbar"
-              aria-valuenow={progress.percent ?? undefined}
-            >
-              <div
-                className={progress.percent === null ? "indeterminate" : ""}
-                style={{
-                  width:
-                    progress.percent === null ? "35%" : `${progress.percent}%`,
-                }}
-              />
-            </div>
-            <div className="progress-actions">
-              <small>{t("buildingCanTake")}</small>
-              <button
-                className="button danger ghost"
-                onClick={() => void api.cancelOperation()}
-              >
-                {t("cancel")}
+      {view === "release" && (
+        <section className="context-card flow-view">
+          <div className="flow-heading">
+            <button className="back-button" onClick={returnToStatus}>← {t("back")}</button>
+            <span className="step-label">{t("stepOf", { current: "1", total: "3" })}</span>
+            <h2>{t("chooseVersionTitle")}</h2>
+            <p>{t("chooseVersionBody")}</p>
+          </div>
+          {releaseLoading && releases.length === 0 ? (
+            <div className="inline-loading"><div className="spinner" />{t("loadingReleases")}</div>
+          ) : (
+            <>
+              <label className="field-label" htmlFor="release">{t("selectRelease")}</label>
+              <select id="release" value={selectedTag} onChange={(event) => setSelectedTag(event.target.value)}>
+                {releases.map((release) => (
+                  <option key={release.tag} value={release.tag}>
+                    {release.tag.replace(/^v/, "")}
+                    {release.latest ? ` — ${t("latest")}` : ""}
+                    {release.prerelease ? ` — ${t("beta")}` : ""}
+                  </option>
+                ))}
+              </select>
+              {selectedRelease && (
+                <div className="release-summary">
+                  <span>{new Date(selectedRelease.publishedAt).toLocaleDateString()}</span>
+                  <span>{formatBytes(selectedRelease.size)}</span>
+                  <span className="checksum">SHA-256 ✓</span>
+                </div>
+              )}
+              <label className="switch-row compact-switch">
+                <input type="checkbox" checked={includePrereleases} onChange={(event) => setIncludePrereleases(event.target.checked)} />
+                <span>{t("includePrereleases")}</span>
+              </label>
+              <button className="button primary full next-button" disabled={!selectedRelease || releaseLoading} onClick={() => void openPreflight()}>
+                {t("continueToChecks")} →
               </button>
-            </div>
-            <details className="logs" open={progress.stage === "failed"}>
-              <summary>{t("logs")}</summary>
-              <pre>{logs.join("\n") || "…"}</pre>
-            </details>
-          </>
-        ) : (
-          <>
-            <div>
-              <strong>
-                {selectedRelease?.name ?? selectedRelease?.tag ?? "Aseprite"}
-              </strong>
-              <p>{t("buildingCanTake")}</p>
-            </div>
-            <button
-              className="button primary large"
-              disabled={!selectedRelease || !preflight?.ready}
-              onClick={() => beginConsent()}
-            >
-              <span>{actionLabel}</span>
-              <span aria-hidden="true">→</span>
-            </button>
-          </>
-        )}
-      </section>
+            </>
+          )}
+        </section>
+      )}
 
-      <footer>
-        <div>
-          <strong>{t("aboutLinks")}</strong>
-          <button onClick={() => void api.openExternal(ASEPRITE_URL)}>
-            {t("asepriteWebsite")} ↗
-          </button>
-          <button onClick={() => void api.openExternal(PROJECT_URL)}>
-            {t("sourceCode")} ↗
-          </button>
-        </div>
-        <div className="footer-tools">
-          <span>{t("privacy")}</span>
-          <button className="button ghost compact" onClick={() => void cleanCache()}>
-            {t("cleanCache")}
-          </button>
-        </div>
-      </footer>
+      {view === "preflight" && (
+        <section className="context-card flow-view">
+          <div className="flow-heading">
+            <button className="back-button" onClick={() => setView("release")}>← {t("back")}</button>
+            <span className="step-label">{t("stepOf", { current: "2", total: "3" })}</span>
+            <h2>{t("checkToolsTitle")}</h2>
+            <p>{t("checkToolsBody")}</p>
+          </div>
+          {preflightLoading ? (
+            <div className="inline-loading"><div className="spinner" />{t("checkingTools")}</div>
+          ) : preflight ? (
+            <>
+              <ul className="check-list single-column">
+                {preflight.prerequisites.map((item) => (
+                  <li className={item.ok ? "ok" : "missing"} key={item.id}>
+                    <span className="check-mark">{item.ok ? "✓" : "!"}</span>
+                    <div><strong>{item.label}</strong><small>{item.detail}</small></div>
+                  </li>
+                ))}
+              </ul>
+              {preflight.homebrewAvailable && preflight.prerequisites.some((item) => !item.ok && (item.id === "cmake" || item.id === "ninja")) && (
+                <button className="button secondary full" disabled={installingTools} onClick={() => void installTools()}>
+                  {installingTools ? t("installingTools") : t("installTools")}
+                </button>
+              )}
+              {!preflight.ready && <p className="blocking-note">{t("fixRequirements")}</p>}
+              <button
+                className="button primary full next-button"
+                disabled={!preflight.ready || installingTools}
+                onClick={() => { setEulaAccepted(false); setShowEula(true); }}
+              >
+                {actionLabel} →
+              </button>
+            </>
+          ) : null}
+        </section>
+      )}
+
+      {view === "install" && (
+        <section className="context-card progress-view">
+          {completedInstallation ? (
+            <>
+              <div className="status-symbol success-symbol" aria-hidden="true">✓</div>
+              <div className="status-copy">
+                <span className="step-label">{t("stepOf", { current: "3", total: "3" })}</span>
+                <h2>{t("installComplete")}</h2>
+                <p>Aseprite {completedInstallation.version?.replace(/^v/, "") ?? selectedTag.replace(/^v/, "")}</p>
+              </div>
+              <div className="primary-actions">
+                <button className="button primary full" onClick={() => void api.launchInstallation(completedInstallation.id)}>▶ {t("openAseprite")}</button>
+                <button className="button ghost full" onClick={returnToStatus}>{t("done")}</button>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="flow-heading progress-heading">
+                <span className="step-label">{t("stepOf", { current: "3", total: "3" })}</span>
+                <h2>{progress.stage === "failed" ? t("installFailed") : t("installingTitle")}</h2>
+                <p>{progress.message || t("preparingBuild")}</p>
+              </div>
+              <div className="progress-copy"><strong>{progress.percent === null ? "…" : `${progress.percent}%`}</strong></div>
+              <div className="progress-track" role="progressbar" aria-valuenow={progress.percent ?? undefined}>
+                <div className={progress.percent === null ? "indeterminate" : ""} style={{ width: progress.percent === null ? "35%" : `${progress.percent}%` }} />
+              </div>
+              <p className="build-note">{t("buildingCanTake")}</p>
+              <div className="progress-buttons">
+                {busy ? (
+                  <button className="button danger ghost" onClick={() => void api.cancelOperation()}>{t("cancel")}</button>
+                ) : (
+                  <button className="button ghost" onClick={() => setView("preflight")}>← {t("back")}</button>
+                )}
+              </div>
+              <details className="logs" open={progress.stage === "failed"}>
+                <summary>{t("logs")}</summary>
+                <pre>{logs.join("\n") || "…"}</pre>
+              </details>
+            </>
+          )}
+        </section>
+      )}
 
       {showEula && (
         <div className="modal-backdrop" role="presentation">
-          <section
-            className="modal"
-            role="dialog"
-            aria-modal="true"
-            aria-labelledby="legal-title"
-          >
-            <button
-              className="modal-close"
-              aria-label={t("close")}
-              onClick={() => setShowEula(false)}
-            >
-              ×
-            </button>
-            <span className="modal-icon" aria-hidden="true">
-              §
-            </span>
-            <h2 id="legal-title">
-              {adoption ? t("adoptionTitle") : t("legalTitle")}
-            </h2>
-            {adoption && <p>{t("adoptionBody")}</p>}
+          <section className="modal" role="dialog" aria-modal="true" aria-labelledby="legal-title">
+            <button className="modal-close" aria-label={t("close")} onClick={() => setShowEula(false)}>×</button>
+            <span className="modal-icon" aria-hidden="true">§</span>
+            <h2 id="legal-title">{flowTarget?.channel === "manual" ? t("adoptionTitle") : t("legalTitle")}</h2>
+            {flowTarget?.channel === "manual" && <p>{t("adoptionBody")}</p>}
             <p>{t("legalBody")}</p>
-            <button
-              className="text-link"
-              onClick={() => void api.openExternal(EULA_URL)}
-            >
-              {t("readEula")} ↗
-            </button>
+            <button className="text-link" onClick={() => void api.openExternal(EULA_URL)}>{t("readEula")} ↗</button>
             <label className="consent">
-              <input
-                type="checkbox"
-                checked={eulaAccepted}
-                onChange={(event) => setEulaAccepted(event.target.checked)}
-              />
+              <input type="checkbox" checked={eulaAccepted} onChange={(event) => setEulaAccepted(event.target.checked)} />
               <span>{t("legalConfirm")}</span>
             </label>
-            <button
-              className="button primary full"
-              disabled={!eulaAccepted}
-              onClick={() => void startInstall()}
-            >
-              {t("continue")} →
-            </button>
+            <button className="button primary full" disabled={!eulaAccepted} onClick={() => void startInstall()}>{t("continue")} →</button>
           </section>
         </div>
       )}
