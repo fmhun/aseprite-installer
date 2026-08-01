@@ -301,7 +301,8 @@ function App() {
         <section className="site-section site-source" id="open-source">
           <div>
             <h2>MIT licensed.<br /><em>OPEN SOURCE</em></h2>
-            <p>Aseprite Installer is a transparent Tauri, React, and Rust utility released under the MIT License. Aseprite remains subject to its own EULA. No account, token, analytics, or hidden build service.</p>
+            <p>Aseprite Installer is a transparent Tauri, React, and Rust utility released under the MIT License. Aseprite remains subject to its own EULA. No account, token, analytics, or hidden service.</p>
+            <p className="site-source-community">A free tool developed for the Aseprite community.</p>
           </div>
           <nav className="site-source-links" aria-label="Open source project links">
             <a href={GITHUB_URL}><span>Browse the code</span><small>GitHub repository</small><ExternalArrow /></a>
