@@ -50,7 +50,7 @@ impl InstallerPaths {
         }
     }
 
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    #[cfg(target_os = "macos")]
     pub fn ensure(&self) -> AppResult<()> {
         for directory in [
             &self.data_dir,

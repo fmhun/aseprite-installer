@@ -3576,7 +3576,7 @@ mod tests {
             directory.path().join("data"),
             directory.path().join("cache"),
         );
-        paths.ensure().unwrap();
+        std::fs::create_dir_all(&paths.data_dir).unwrap();
         let lock_path = paths.data_dir.join(".operation.lock");
         let held = OpenOptions::new()
             .create(true)
