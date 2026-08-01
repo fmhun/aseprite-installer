@@ -48,6 +48,9 @@ describe("landing page", () => {
     expect(screen.queryByText(/Windows/)).not.toBeInTheDocument();
     expect(screen.queryByText(/No telemetry/)).not.toBeInTheDocument();
     expect(screen.getByText(/~6 GB free/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Get ready to build" })).toBeInTheDocument();
+    expect(screen.getByText(/Let the installer set up CMake and Ninja through Homebrew/)).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Check your Mac" })).not.toBeInTheDocument();
   });
 
   it("places Install before How it works in the page and navigation", () => {

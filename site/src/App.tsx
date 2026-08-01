@@ -288,7 +288,7 @@ function App() {
             </li>
             <li>
               <div className="site-process-number">02</div>
-              <div><h3>Check your Mac</h3><p>Confirm Xcode, CMake, Ninja, disk space, and the personal-use EULA.</p></div>
+              <div><h3>Get ready to build</h3><p>Let the installer set up CMake and Ninja through Homebrew, or follow the built-in guides to resolve each requirement manually.</p></div>
             </li>
             <li>
               <div className="site-process-number">03</div>

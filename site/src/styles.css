@@ -121,8 +121,9 @@ summary:focus-visible {
 }
 
 .site-header {
-  position: relative;
+  position: sticky;
   z-index: 20;
+  top: 16px;
   display: grid;
   width: min(var(--content), calc(100% - 40px));
   min-height: 70px;
@@ -1402,7 +1403,7 @@ summary:focus-visible {
 }
 
 @media (max-width: 700px) {
-  html { scroll-padding-top: 20px; }
+  html { scroll-padding-top: 76px; }
 
   .site-header,
   .site-hero,
@@ -1412,6 +1413,7 @@ summary:focus-visible {
   }
 
   .site-header {
+    top: 8px;
     min-height: 60px;
     gap: 10px;
     margin-top: 8px;
