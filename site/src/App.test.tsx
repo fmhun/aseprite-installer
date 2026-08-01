@@ -48,6 +48,8 @@ describe("landing page", () => {
     expect(screen.queryByText(/Windows/)).not.toBeInTheDocument();
     expect(screen.queryByText(/No telemetry/)).not.toBeInTheDocument();
     expect(screen.getByText(/~6 GB free/)).toBeInTheDocument();
+    expect(screen.getByText(/Aseprite Installer manages requirement setup for you/)).toBeInTheDocument();
+    expect(screen.getByText(/installing supported tools automatically and guiding you through everything else/)).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Get ready to build" })).toBeInTheDocument();
     expect(screen.getByText(/Let the installer set up CMake and Ninja through Homebrew/)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Check your Mac" })).not.toBeInTheDocument();
