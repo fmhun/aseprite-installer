@@ -12,7 +12,7 @@
   background: #171920;
   font-synthesis: none;
   text-rendering: geometricPrecision;
-  color-scheme: dark light;
+  color-scheme: only dark;
   --bg: #171920;
   --workspace: #20232b;
   --face: #2a2d37;
@@ -1362,43 +1362,6 @@ summary:focus-visible {
 @keyframes site-arrow {
   0%, 100% { opacity: 0.35; transform: translateX(0); }
   50% { opacity: 1; transform: translateX(3px); }
-}
-
-@media (prefers-color-scheme: light) {
-  :root {
-    --bg: #d9dce2;
-    --workspace: #c9ced7;
-    --face: #eef0f4;
-    --face-hot: #ffffff;
-    --raised: #d4d8e0;
-    --sunken: #aeb5c1;
-    --edge-light: #ffffff;
-    --edge-mid: #9aa3b1;
-    --edge-dark: #505866;
-    --text: #202630;
-    --muted: #46505e;
-    --faint: #505b69;
-    --button-ink: #202630;
-    --success-ink: #ffffff;
-    --accent: #d99a22;
-    --accent-hot: #f4bd4c;
-    --accent-dark: #966313;
-    --accent-text: #7a4b00;
-    --accent-text-hot: #6b4100;
-    --blue: #175daa;
-    --blue-dark: #184c8e;
-    --green: #206b49;
-    --green-dark: #246f4d;
-    --danger: #c44857;
-    --shadow: #68717e;
-  }
-
-  .site-header { background: rgb(238 240 244 / 96%); }
-  .site-logo img,
-  .demo-brand img,
-  .site-footer-brand img,
-  .site-dmg-app img,
-  .demo-complete > img { filter: contrast(1.08) drop-shadow(3px 3px 0 var(--shadow)); }
 }
 
 @media (max-width: 980px) {
