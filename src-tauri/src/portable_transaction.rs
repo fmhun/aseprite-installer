@@ -29,7 +29,7 @@ use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FileRenameInfo, GetFileInformationByHandle, GetFinalPathNameByHandleW,
     SetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_DIRECTORY,
     FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_WRITE_THROUGH, FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES,
-    FILE_RENAME_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    FILE_RENAME_INFO, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
 };
 
 pub(crate) const PORTABLE_JOURNAL_SCHEMA_VERSION: u32 = 2;
@@ -434,8 +434,8 @@ fn durable_rename_no_replace_kind(
         ));
     }
     // Revalidate immediately before the atomic syscall. Linux binds renameat2
-    // to an O_NOFOLLOW directory fd; Windows binds both the source and the
-    // destination basename to verified handles below.
+    // to an O_NOFOLLOW directory fd; Windows binds the source and its in-place
+    // destination name to a verified, non-delete-shared source handle below.
     validate_directory_chain(source_parent)?;
     platform_rename_no_replace(source, destination, directory)?;
     validate_directory_chain(source_parent)?;
@@ -758,11 +758,11 @@ fn platform_rename_no_replace(
     // an ancestor. Requiring the parent handle to resolve to the exact lexical
     // parent closes the validation-to-syscall junction-swap window.
     let expected_parent = normalize_windows_handle_path(parent.as_os_str());
-    // Denying delete sharing on the verified parent keeps its directory name
-    // stable while the absolute destination below is resolved. Child entries
-    // can still be renamed because the handle shares reads and writes.
+    // Denying delete sharing keeps the verified parent stable through source
+    // validation and the syscall. Child entries can still be renamed because
+    // the directory handle shares reads and writes.
     let parent_handle =
-        open_windows_rename_handle(parent, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES, false)?;
+        open_windows_rename_handle(parent, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES)?;
     validate_windows_handle_type(&parent_handle, true)?;
     let actual_parent =
         normalize_windows_handle_path(windows_final_path(&parent_handle)?.as_os_str());
@@ -775,7 +775,7 @@ fn platform_rename_no_replace(
         ));
     }
 
-    let source_handle = open_windows_rename_handle(source, DELETE | FILE_READ_ATTRIBUTES, true)?;
+    let source_handle = open_windows_rename_handle(source, DELETE | FILE_READ_ATTRIBUTES)?;
     validate_windows_handle_type(&source_handle, directory)?;
     let expected_source = normalize_windows_handle_path(source.as_os_str());
     let actual_source =
@@ -789,9 +789,9 @@ fn platform_rename_no_replace(
         ));
     }
 
-    // Resolve the destination relative to the verified directory handle. An
-    // absolute path would reopen every lexical ancestor during the rename and
-    // reintroduce a path-swap race after validation.
+    // A simple basename lets FileRenameInfo keep the destination in the opened
+    // source object's directory. An absolute path would reopen every lexical
+    // ancestor and reintroduce a path-swap race after validation.
     let destination_name = destination_name.encode_wide().collect::<Vec<_>>();
     if destination_name.is_empty()
         || destination_name.len() > (u32::MAX as usize / std::mem::size_of::<u16>())
@@ -826,14 +826,15 @@ fn platform_rename_no_replace(
     let mut rename_buffer = vec![0_usize; words];
     let rename_info = rename_buffer.as_mut_ptr().cast::<FILE_RENAME_INFO>();
     unsafe {
-        // The destination stays bound to the verified parent handle, and
-        // ReplaceIfExists = false remains a kernel-enforced atomic no-replace
-        // operation with no check-then-rename window. The corrected full
-        // buffer size above is required by FileRenameInfo even though the
-        // structure declares a trailing FileName[1]. Durability is requested
-        // with FILE_FLAG_WRITE_THROUGH.
+        // A NULL RootDirectory plus a simple name is the documented in-place
+        // rename form: the destination remains in the verified source object's
+        // current directory, without reopening a lexical ancestor. The source
+        // handle denies delete sharing, and ReplaceIfExists = false remains a
+        // kernel-enforced atomic no-replace operation. The corrected full
+        // buffer size above is required even though FILE_RENAME_INFO declares
+        // a trailing FileName[1]. Durability uses FILE_FLAG_WRITE_THROUGH.
         (*rename_info).Anonymous.ReplaceIfExists = false;
-        (*rename_info).RootDirectory = parent_handle.as_raw_handle() as _;
+        (*rename_info).RootDirectory = std::ptr::null_mut();
         (*rename_info).FileNameLength = name_bytes as u32;
         std::ptr::copy_nonoverlapping(
             destination_name.as_ptr(),
@@ -865,21 +866,13 @@ fn platform_rename_no_replace(
 }
 
 #[cfg(target_os = "windows")]
-fn open_windows_rename_handle(
-    path: &Path,
-    access: u32,
-    share_delete: bool,
-) -> std::io::Result<OwnedHandle> {
+fn open_windows_rename_handle(path: &Path, access: u32) -> std::io::Result<OwnedHandle> {
     let path = wide(path);
-    let mut share_mode = FILE_SHARE_READ | FILE_SHARE_WRITE;
-    if share_delete {
-        share_mode |= FILE_SHARE_DELETE;
-    }
     let handle = unsafe {
         CreateFileW(
             path.as_ptr(),
             access,
-            share_mode,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
             std::ptr::null(),
             OPEN_EXISTING,
             FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_WRITE_THROUGH,
