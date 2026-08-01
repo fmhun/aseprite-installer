@@ -71,7 +71,8 @@ body,
 
 body {
   min-height: 100vh;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
   background-color: var(--bg);
   background-image:
     linear-gradient(45deg, var(--checker-b) 25%, transparent 25%),
@@ -115,9 +116,8 @@ summary:focus-visible {
 }
 
 .app-footer {
-  position: sticky;
-  bottom: 0;
   display: flex;
+  flex: 0 0 auto;
   flex-direction: column;
   align-items: center;
   justify-content: center;
