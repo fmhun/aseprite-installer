@@ -28,9 +28,8 @@ use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, INVALID_HANDLE_VALUE}
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FileRenameInfo, GetFileAttributesW, GetFileInformationByHandle,
     GetFinalPathNameByHandleW, SetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, DELETE,
-    FILE_ATTRIBUTE_DIRECTORY, FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY,
-    FILE_READ_ATTRIBUTES, FILE_RENAME_INFO, FILE_SHARE_READ, FILE_SHARE_WRITE,
-    INVALID_FILE_ATTRIBUTES, OPEN_EXISTING,
+    FILE_ATTRIBUTE_DIRECTORY, FILE_FLAG_BACKUP_SEMANTICS, FILE_READ_ATTRIBUTES, FILE_RENAME_INFO,
+    FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE, INVALID_FILE_ATTRIBUTES, OPEN_EXISTING,
 };
 
 pub(crate) const PORTABLE_JOURNAL_SCHEMA_VERSION: u32 = 2;
@@ -836,9 +835,8 @@ fn platform_rename_no_replace(
     // Denying delete sharing keeps the verified parent stable through source
     // validation and the syscall. Child entries can still be renamed because
     // the directory handle shares reads and writes.
-    let parent_handle =
-        open_windows_rename_handle(parent, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES)
-            .map_err(|error| windows_io_context("opening the transaction parent", error))?;
+    let parent_handle = open_windows_rename_handle(parent, FILE_TRAVERSE | FILE_READ_ATTRIBUTES)
+        .map_err(|error| windows_io_context("opening the transaction parent", error))?;
     validate_windows_handle_type(&parent_handle, true)
         .map_err(|error| windows_io_context("validating the transaction parent", error))?;
     let actual_parent = normalize_windows_handle_path(
