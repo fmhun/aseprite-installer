@@ -2,6 +2,8 @@
 
 An unofficial macOS utility that compiles and manages a personal Aseprite installation from official source releases.
 
+[Website](https://fmhun.github.io/aseprite-installer/) · [Download the universal macOS DMG](https://github.com/fmhun/aseprite-installer/releases/latest/download/Aseprite-Installer-macOS-Universal.dmg)
+
 > [!IMPORTANT]
 > Aseprite is not distributed under a conventional open-source license. Its EULA allows you to compile and modify the source code for your own personal purpose, but it does not allow third-party redistribution of compiled Aseprite binaries. This project never bundles or publishes Aseprite, its source archive, or its branding.
 

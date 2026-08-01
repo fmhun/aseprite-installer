@@ -1,40 +1,173 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" prefix="og: https://ogp.me/ns#">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="color-scheme" content="dark light" />
     <meta name="theme-color" content="#171920" />
+    <meta name="application-name" content="Aseprite Installer" />
+    <meta name="author" content="fmhun" />
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1" />
     <meta
       name="description"
-      content="Install an official Aseprite source release on macOS without wrestling with the build toolchain."
+      content="Aseprite Installer is a free, open-source macOS utility that verifies and builds your personal Aseprite copy locally from an official source release."
     />
     <meta property="og:type" content="website" />
+    <meta property="og:locale" content="en_US" />
     <meta property="og:site_name" content="Aseprite Installer" />
-    <meta property="og:title" content="Install Aseprite from source." />
+    <meta property="og:title" content="Aseprite Installer for macOS — Build from Source" />
     <meta
       property="og:description"
-      content="Choose an official source release. Aseprite Installer verifies and compiles it locally on your Mac."
+      content="Aseprite Installer is a free, open-source macOS utility that verifies and builds your personal Aseprite copy locally from an official source release."
     />
     <meta property="og:url" content="https://fmhun.github.io/aseprite-installer/" />
     <meta property="og:image" content="https://fmhun.github.io/aseprite-installer/og.png" />
+    <meta property="og:image:secure_url" content="https://fmhun.github.io/aseprite-installer/og.png" />
+    <meta property="og:image:type" content="image/png" />
     <meta property="og:image:width" content="1200" />
     <meta property="og:image:height" content="630" />
-    <meta property="og:image:alt" content="Aseprite Installer pixel-art build flow" />
+    <meta property="og:image:alt" content="Pixel-art preview of Aseprite Installer building an official Aseprite source release on macOS" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="Install Aseprite from source." />
+    <meta name="twitter:title" content="Aseprite Installer for macOS — Build from Source" />
     <meta
       name="twitter:description"
-      content="Choose an official source release. Aseprite Installer verifies and compiles it locally on your Mac."
+      content="Aseprite Installer is a free, open-source macOS utility that verifies and builds your personal Aseprite copy locally from an official source release."
     />
     <meta name="twitter:image" content="https://fmhun.github.io/aseprite-installer/og.png" />
-    <meta name="twitter:image:alt" content="Aseprite Installer pixel-art build flow" />
+    <meta name="twitter:image:alt" content="Pixel-art preview of Aseprite Installer building an official Aseprite source release on macOS" />
     <link rel="canonical" href="https://fmhun.github.io/aseprite-installer/" />
-    <link rel="icon" type="image/svg+xml" href="../assets/icons/aseprite-installer.svg" />
-    <title>Aseprite Installer — Install from source on macOS</title>
+    <link rel="icon" type="image/svg+xml" sizes="any" href="%BASE_URL%favicon.svg" />
+    <link
+      rel="preload"
+      href="../src/assets/fonts/PixelifySans-Variable.ttf"
+      as="font"
+      type="font/ttf"
+      crossorigin
+    />
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Person",
+            "@id": "https://fmhun.github.io/aseprite-installer/#author",
+            "name": "fmhun",
+            "url": "https://github.com/fmhun",
+            "sameAs": ["https://github.com/fmhun"]
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://fmhun.github.io/aseprite-installer/#website",
+            "url": "https://fmhun.github.io/aseprite-installer/",
+            "name": "Aseprite Installer",
+            "description": "A free, open-source macOS utility for verified personal Aseprite source builds.",
+            "inLanguage": "en",
+            "publisher": { "@id": "https://fmhun.github.io/aseprite-installer/#author" }
+          },
+          {
+            "@type": "ImageObject",
+            "@id": "https://fmhun.github.io/aseprite-installer/#social-image",
+            "contentUrl": "https://fmhun.github.io/aseprite-installer/og.png",
+            "width": 1200,
+            "height": 630,
+            "caption": "Pixel-art preview of Aseprite Installer building an official Aseprite source release on macOS"
+          },
+          {
+            "@type": "WebPage",
+            "@id": "https://fmhun.github.io/aseprite-installer/#webpage",
+            "url": "https://fmhun.github.io/aseprite-installer/",
+            "name": "Aseprite Installer for macOS — Build from Source",
+            "description": "Aseprite Installer is a free, open-source macOS utility that verifies and builds your personal Aseprite copy locally from an official source release.",
+            "inLanguage": "en",
+            "isPartOf": { "@id": "https://fmhun.github.io/aseprite-installer/#website" },
+            "primaryImageOfPage": { "@id": "https://fmhun.github.io/aseprite-installer/#social-image" },
+            "mainEntity": { "@id": "https://fmhun.github.io/aseprite-installer/#software" },
+            "hasPart": { "@id": "https://fmhun.github.io/aseprite-installer/#faq" }
+          },
+          {
+            "@type": "SoftwareApplication",
+            "@id": "https://fmhun.github.io/aseprite-installer/#software",
+            "name": "Aseprite Installer",
+            "alternateName": "Aseprite Installer for macOS",
+            "url": "https://fmhun.github.io/aseprite-installer/",
+            "description": "A free, MIT-licensed macOS utility that checks the required build tools, verifies an official Aseprite source release, and compiles a personal copy locally.",
+            "applicationCategory": "DeveloperApplication",
+            "applicationSubCategory": "Source build automation",
+            "softwareVersion": "0.1.0",
+            "operatingSystem": "macOS 15.2 or later",
+            "processorRequirements": "Apple Silicon (arm64) or Intel (x86_64)",
+            "softwareRequirements": "Xcode with macOS SDK and command-line tools, CMake, Ninja, and approximately 6 GB of free disk space",
+            "downloadUrl": "https://github.com/fmhun/aseprite-installer/releases/latest/download/Aseprite-Installer-macOS-Universal.dmg",
+            "installUrl": "https://github.com/fmhun/aseprite-installer/releases/latest/download/Aseprite-Installer-macOS-Universal.dmg",
+            "releaseNotes": "https://github.com/fmhun/aseprite-installer/releases/latest",
+            "isAccessibleForFree": true,
+            "license": "https://github.com/fmhun/aseprite-installer/blob/main/LICENSE",
+            "image": { "@id": "https://fmhun.github.io/aseprite-installer/#social-image" },
+            "author": { "@id": "https://fmhun.github.io/aseprite-installer/#author" },
+            "sameAs": ["https://github.com/fmhun/aseprite-installer"],
+            "subjectOf": { "@id": "https://fmhun.github.io/aseprite-installer/#source-code" },
+            "offers": {
+              "@type": "Offer",
+              "price": 0,
+              "priceCurrency": "USD",
+              "url": "https://github.com/fmhun/aseprite-installer/releases/latest/download/Aseprite-Installer-macOS-Universal.dmg",
+              "availability": "https://schema.org/InStock"
+            }
+          },
+          {
+            "@type": "SoftwareSourceCode",
+            "@id": "https://fmhun.github.io/aseprite-installer/#source-code",
+            "name": "Aseprite Installer source code",
+            "description": "Source code for the MIT-licensed Aseprite Installer macOS utility.",
+            "url": "https://github.com/fmhun/aseprite-installer",
+            "codeRepository": "https://github.com/fmhun/aseprite-installer",
+            "codeSampleType": "Full (compile-ready) application",
+            "programmingLanguage": ["Rust", "TypeScript"],
+            "runtimePlatform": "Tauri 2 on macOS 15.2 or later",
+            "isAccessibleForFree": true,
+            "license": "https://github.com/fmhun/aseprite-installer/blob/main/LICENSE",
+            "creator": { "@id": "https://fmhun.github.io/aseprite-installer/#author" },
+            "targetProduct": { "@id": "https://fmhun.github.io/aseprite-installer/#software" }
+          },
+          {
+            "@type": "FAQPage",
+            "@id": "https://fmhun.github.io/aseprite-installer/#faq",
+            "url": "https://fmhun.github.io/aseprite-installer/#faq",
+            "isPartOf": { "@id": "https://fmhun.github.io/aseprite-installer/#webpage" },
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Does the installer distribute Aseprite?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. It downloads an official source archive only after you choose a release, verifies its GitHub-provided SHA-256 digest, and compiles your personal copy locally."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Why might macOS show a warning?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "The current release is ad-hoc signed and not notarized by Apple; it does not use a Developer ID certificate. Control-click the installer, choose Open, then confirm once."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "What happens to an existing copy?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "The new app is staged and checked before replacement. Managed builds can keep a backup; Steam and package-manager copies remain read-only."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
+    <title>Aseprite Installer for macOS — Build from Source</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root" data-prerendered="false"><!--app-html--></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

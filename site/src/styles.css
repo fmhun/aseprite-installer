@@ -472,7 +472,7 @@ summary:focus-visible {
   animation: demo-panel-in 280ms steps(4, end) both;
 }
 
-.demo-panel h3 {
+.demo-panel .demo-panel-title {
   margin: 5px 0 7px;
   color: var(--text);
   font-size: 22px;
@@ -1317,7 +1317,7 @@ summary:focus-visible {
   padding-top: 22px;
   border-top: 1px dotted var(--edge-mid);
   color: var(--faint);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.45;
   text-align: center;
 }
@@ -1442,7 +1442,7 @@ summary:focus-visible {
   .demo-app-version { font-size: 8px; }
   .demo-workspace { min-height: 516px; padding: 24px 14px 28px; }
   .demo-panel { padding: 18px; }
-  .demo-panel h3 { font-size: 19px; }
+  .demo-panel .demo-panel-title { font-size: 19px; }
   .demo-panel p { font-size: 11px; }
   .demo-cursor { transform: scale(0.82); }
   .demo-cursor--clicking { transform: translate(2px, 2px) scale(0.74); }

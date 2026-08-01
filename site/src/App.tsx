@@ -39,7 +39,7 @@ function StatusScreen() {
     <div className="demo-panel demo-status">
       <div className="demo-status-mark">+</div>
       <div>
-        <h3>No local copy found</h3>
+        <p className="demo-panel-title">No local copy found</p>
         <p>Start with an official release.</p>
       </div>
       <div className="demo-choice"><span>PERSONAL SOURCE BUILD</span></div>
@@ -54,7 +54,7 @@ function ReleaseScreen() {
       <DemoStepper current={0} />
       <div className="demo-panel demo-flow-panel">
         <div className="demo-kicker">STEP 1 OF 3</div>
-        <h3>Choose a release</h3>
+        <p className="demo-panel-title">Choose a release</p>
         <p>Only official source archives are listed.</p>
         <div className="demo-field-label">ASEPRITE RELEASE</div>
         <div className="demo-select">
@@ -74,7 +74,7 @@ const tools = [
   ["Xcode + macOS SDK", "16.2"],
   ["CMake", "3.31"],
   ["Ninja", "1.12"],
-  ["Free space", "18 GB"],
+  ["Free space", "~6 GB"],
 ] as const;
 
 function PreflightScreen() {
@@ -83,7 +83,7 @@ function PreflightScreen() {
       <DemoStepper current={1} />
       <div className="demo-panel demo-flow-panel">
         <div className="demo-kicker">STEP 2 OF 3</div>
-        <h3>Ready to build</h3>
+        <p className="demo-panel-title">Ready to build</p>
         <p>Your tools stay on your Mac.</p>
         <ul className="demo-tool-list">
           {tools.map(([tool, version]) => (
@@ -118,7 +118,7 @@ function BuildScreen({ progress, buildStage }: { progress: number; buildStage: k
         <div className="demo-build-symbol">
           <i /><i /><i /><i />
         </div>
-        <h3>{title}</h3>
+        <p className="demo-panel-title">{title}</p>
         <p>{detail}</p>
         <div className="demo-progress-copy"><span>{buildStage.toUpperCase()}</span><strong>{progress}%</strong></div>
         <div className="demo-progress-track"><span style={{ width: `${progress}%` }} /></div>
@@ -136,11 +136,11 @@ function CompleteScreen() {
     <>
       <DemoStepper current={3} />
       <div className="demo-panel demo-status demo-complete">
-        <img src={localBuildIcon} alt="" />
+        <img src={localBuildIcon} alt="" width="58" height="58" />
         <div className="demo-status-mark demo-status-mark--success">✓</div>
         <div>
           <div className="demo-kicker">BUILD COMPLETE</div>
-          <h3>Your local app is ready</h3>
+          <p className="demo-panel-title">Your local app is ready</p>
           <p>Aseprite · personal build</p>
           <code>~/Applications/Aseprite.app</code>
         </div>
@@ -177,7 +177,7 @@ export function ProductDemo() {
           <div className="demo-appbar">
             <div className="demo-traffic"><i /><i /><i /></div>
             <div className="demo-brand">
-              <img src={installerIcon} alt="" />
+              <img src={installerIcon} alt="" width="26" height="26" />
               <span>Aseprite Installer</span>
             </div>
             <span className="demo-app-version">v0.1</span>
@@ -205,7 +205,7 @@ function App() {
       <a className="site-skip-link" href="#main">Skip to content</a>
       <header className="site-header">
         <a className="site-logo" href="#top" aria-label="Aseprite Installer home">
-          <img src={installerIcon} alt="" />
+          <img src={installerIcon} alt="" width="36" height="36" />
           <span>Aseprite Installer</span>
           <small>OPEN SOURCE</small>
         </a>
@@ -218,17 +218,17 @@ function App() {
         <a className="site-button site-button--small" href={DOWNLOAD_URL}>Download</a>
       </header>
 
-      <main id="main">
+      <main id="main" tabIndex={-1}>
         <section className="site-hero" id="top">
           <div className="site-hero-copy">
             <h1>Install <em>Aseprite</em><br />from source.</h1>
             <p className="site-eyebrow site-hero-tag"><span /> AND FOR FREE</p>
             <p className="site-lead">
-              Install an Aseprite release from the official source repository—without wrestling with the development tools required to build it. Aseprite Installer verifies the source and handles the entire compilation locally on your Mac.
+              Aseprite Installer is a free, MIT-licensed macOS utility that checks the required build tools, verifies an official source release, and compiles your personal Aseprite copy locally.
             </p>
             <div className="site-hero-actions">
               <a className="site-button" href={DOWNLOAD_URL}>Download for macOS <span aria-hidden="true">↓</span></a>
-              <a className="site-text-link" href={GITHUB_URL}>View source <ExternalArrow /></a>
+              <a className="site-text-link" href={GITHUB_URL}>View source on GitHub <ExternalArrow /></a>
             </div>
             <p className="site-compatibility">macOS 15.2+ <i /> Universal DMG <i /> Apple Silicon + Intel</p>
           </div>
@@ -275,7 +275,7 @@ function App() {
             <a className="site-button" href={DOWNLOAD_URL}>Download universal DMG <span aria-hidden="true">↓</span></a>
           </div>
 
-          <div className="site-dmg" aria-label="Illustration of the installer disk image">
+          <div className="site-dmg" role="img" aria-label="Illustration of the installer disk image">
             <div className="site-dmg-titlebar">
               <span><i /><i /><i /></span>
               <strong>Aseprite Installer</strong>
@@ -283,7 +283,7 @@ function App() {
             </div>
             <div className="site-dmg-canvas">
               <div className="site-dmg-app">
-                <img src={installerIcon} alt="" />
+                <img src={installerIcon} alt="" width="88" height="88" />
                 <span>Aseprite Installer</span>
               </div>
               <div className="site-dmg-arrow"><i /><i /><i /></div>
@@ -300,7 +300,7 @@ function App() {
         <section className="site-section site-source" id="open-source">
           <div>
             <h2>MIT licensed.<br /><em>OPEN SOURCE</em></h2>
-            <p>A transparent Tauri, React, and Rust utility. No account, token, analytics, or hidden build service.</p>
+            <p>Aseprite Installer is a transparent Tauri, React, and Rust utility released under the MIT License. Aseprite remains subject to its own EULA. No account, token, analytics, or hidden build service.</p>
           </div>
           <nav className="site-source-links" aria-label="Open source project links">
             <a href={GITHUB_URL}><span>Browse the code</span><small>GitHub repository</small><ExternalArrow /></a>
@@ -317,15 +317,15 @@ function App() {
           </div>
           <div className="site-faq-list">
             <details>
-              <summary>Does the installer distribute Aseprite?<span>+</span></summary>
+              <summary>Does the installer distribute Aseprite?<span aria-hidden="true">+</span></summary>
               <p>No. It downloads an official source archive only after you choose a release, verifies its GitHub-provided SHA-256 digest, and compiles your personal copy locally.</p>
             </details>
             <details>
-              <summary>Why might macOS show a warning?<span>+</span></summary>
-              <p>The first release is ad-hoc signed, not notarized with an Apple Developer ID. Control-click the installer, choose Open, then confirm once.</p>
+              <summary>Why might macOS show a warning?<span aria-hidden="true">+</span></summary>
+              <p>The current release is ad-hoc signed and not notarized by Apple; it does not use a Developer ID certificate. Control-click the installer, choose Open, then confirm once.</p>
             </details>
             <details>
-              <summary>What happens to an existing copy?<span>+</span></summary>
+              <summary>What happens to an existing copy?<span aria-hidden="true">+</span></summary>
               <p>The new app is staged and checked before replacement. Managed builds can keep a backup; Steam and package-manager copies remain read-only.</p>
             </details>
           </div>
@@ -334,7 +334,7 @@ function App() {
 
       <footer className="site-footer">
         <div className="site-footer-brand">
-          <img src={installerIcon} alt="" />
+          <img src={installerIcon} alt="" width="40" height="40" />
           <strong>Aseprite Installer</strong>
         </div>
         <div className="site-footer-links">

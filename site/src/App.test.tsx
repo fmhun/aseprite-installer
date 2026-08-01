@@ -34,6 +34,7 @@ describe("landing page", () => {
       /Install Aseprite\s*from source\./,
     );
     expect(screen.getByText("AND FOR FREE")).toBeInTheDocument();
+    expect(screen.getByText(/Aseprite Installer is a free, MIT-licensed macOS utility/)).toBeInTheDocument();
     const downloads = screen.getAllByRole("link", { name: /download/i });
     expect(downloads.some((link) => link.getAttribute("href")?.endsWith("Aseprite-Installer-macOS-Universal.dmg"))).toBe(true);
     expect(screen.getByRole("link", { name: /browse the code/i })).toHaveAttribute(
@@ -46,6 +47,7 @@ describe("landing page", () => {
     expect(screen.queryByText("BUILD REQUIREMENTS")).not.toBeInTheDocument();
     expect(screen.queryByText(/Windows/)).not.toBeInTheDocument();
     expect(screen.queryByText(/No telemetry/)).not.toBeInTheDocument();
+    expect(screen.getByText(/~6 GB free/)).toBeInTheDocument();
   });
 
   it("advances the walkthrough automatically", () => {
