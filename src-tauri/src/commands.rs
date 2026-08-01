@@ -308,7 +308,7 @@ fn is_allowed_external_url(url: &Url) -> bool {
         Some("www.aseprite.org") | Some("aseprite.org") => true,
         Some("github.com") => {
             url.path().starts_with("/aseprite/aseprite")
-                || url.path().starts_with("/fmhun/asprite-installer")
+                || url.path().starts_with("/fmhun/aseprite-installer")
                 || url.path().starts_with("/ninja-build/ninja/releases")
         }
         Some("developer.apple.com") => url

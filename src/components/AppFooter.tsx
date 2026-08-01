@@ -5,7 +5,7 @@ const LINKS = [
   { label: "Aseprite on GitHub", url: "https://github.com/aseprite/aseprite" },
   {
     label: "Aseprite Installer on GitHub",
-    url: "https://github.com/fmhun/asprite-installer",
+    url: "https://github.com/fmhun/aseprite-installer",
   },
 ] as const;
 

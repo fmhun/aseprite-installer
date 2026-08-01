@@ -159,7 +159,7 @@ describe("Aseprite Installer contextual flow", () => {
     expect(api.openExternal).toHaveBeenNthCalledWith(1, "https://www.aseprite.org/buy/");
     expect(api.openExternal).toHaveBeenNthCalledWith(2, "https://www.aseprite.org/buy/");
     expect(api.openExternal).toHaveBeenNthCalledWith(3, "https://github.com/aseprite/aseprite");
-    expect(api.openExternal).toHaveBeenNthCalledWith(4, "https://github.com/fmhun/asprite-installer");
+    expect(api.openExternal).toHaveBeenNthCalledWith(4, "https://github.com/fmhun/aseprite-installer");
   });
 
   it("shows a minimal installed state before entering the reinstall flow", async () => {
