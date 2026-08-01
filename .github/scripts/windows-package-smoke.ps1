@@ -468,55 +468,64 @@ function Get-MsiProductState {
 function Get-UninstallRegistryEntries {
   $entries = [Collections.Generic.List[object]]::new()
   $uninstallPath = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall'
-  $hives = @(
-    [Microsoft.Win32.RegistryHive]::CurrentUser,
-    [Microsoft.Win32.RegistryHive]::LocalMachine
-  )
-  $views = @(
-    [Microsoft.Win32.RegistryView]::Registry64,
-    [Microsoft.Win32.RegistryView]::Registry32
+  # HKCU\Software is shared by WOW64, so alternate views expose the same
+  # physical uninstall keys twice. HKLM\Software is redirected and must be
+  # inspected in both views.
+  $scopes = @(
+    [pscustomobject]@{
+      Hive = [Microsoft.Win32.RegistryHive]::CurrentUser
+      View = [Microsoft.Win32.RegistryView]::Default
+    },
+    [pscustomobject]@{
+      Hive = [Microsoft.Win32.RegistryHive]::LocalMachine
+      View = [Microsoft.Win32.RegistryView]::Registry64
+    },
+    [pscustomobject]@{
+      Hive = [Microsoft.Win32.RegistryHive]::LocalMachine
+      View = [Microsoft.Win32.RegistryView]::Registry32
+    }
   )
 
-  foreach ($hive in $hives) {
-    foreach ($view in $views) {
-      $baseKey = $null
-      $uninstallKey = $null
-      try {
-        $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey($hive, $view)
-        $uninstallKey = $baseKey.OpenSubKey($uninstallPath, $false)
-        if ($null -eq $uninstallKey) {
-          continue
-        }
-        foreach ($keyName in $uninstallKey.GetSubKeyNames()) {
-          $entryKey = $null
-          try {
-            $entryKey = $uninstallKey.OpenSubKey($keyName, $false)
-            if ($null -eq $entryKey) {
-              continue
-            }
-            $entries.Add([pscustomobject]@{
-              Location = "$hive/$view/$keyName"
-              Hive = [string]$hive
-              View = [string]$view
-              KeyName = [string]$keyName
-              DisplayName = [string]$entryKey.GetValue('DisplayName', '')
-              InstallLocation = [string]$entryKey.GetValue('InstallLocation', '')
-              UninstallString = [string]$entryKey.GetValue('UninstallString', '')
-              QuietUninstallString = [string]$entryKey.GetValue('QuietUninstallString', '')
-            })
-          } finally {
-            if ($null -ne $entryKey) {
-              $entryKey.Dispose()
-            }
+  foreach ($scope in $scopes) {
+    $hive = $scope.Hive
+    $view = $scope.View
+    $baseKey = $null
+    $uninstallKey = $null
+    try {
+      $baseKey = [Microsoft.Win32.RegistryKey]::OpenBaseKey($hive, $view)
+      $uninstallKey = $baseKey.OpenSubKey($uninstallPath, $false)
+      if ($null -eq $uninstallKey) {
+        continue
+      }
+      foreach ($keyName in $uninstallKey.GetSubKeyNames()) {
+        $entryKey = $null
+        try {
+          $entryKey = $uninstallKey.OpenSubKey($keyName, $false)
+          if ($null -eq $entryKey) {
+            continue
+          }
+          $entries.Add([pscustomobject]@{
+            Location = "$hive/$view/$keyName"
+            Hive = [string]$hive
+            View = [string]$view
+            KeyName = [string]$keyName
+            DisplayName = [string]$entryKey.GetValue('DisplayName', '')
+            InstallLocation = [string]$entryKey.GetValue('InstallLocation', '')
+            UninstallString = [string]$entryKey.GetValue('UninstallString', '')
+            QuietUninstallString = [string]$entryKey.GetValue('QuietUninstallString', '')
+          })
+        } finally {
+          if ($null -ne $entryKey) {
+            $entryKey.Dispose()
           }
         }
-      } finally {
-        if ($null -ne $uninstallKey) {
-          $uninstallKey.Dispose()
-        }
-        if ($null -ne $baseKey) {
-          $baseKey.Dispose()
-        }
+      }
+    } finally {
+      if ($null -ne $uninstallKey) {
+        $uninstallKey.Dispose()
+      }
+      if ($null -ne $baseKey) {
+        $baseKey.Dispose()
       }
     }
   }
