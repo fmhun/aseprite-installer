@@ -210,8 +210,8 @@ function App() {
           <small>OPEN SOURCE</small>
         </a>
         <nav className="site-nav" aria-label="Main navigation">
-          <a href="#how-it-works">How it works</a>
           <a href="#install">Install</a>
+          <a href="#how-it-works">How it works</a>
           <a href="#faq">FAQ</a>
           <a href={GITHUB_URL}>GitHub <ExternalArrow /></a>
         </nav>
@@ -240,27 +240,6 @@ function App() {
           <p className="site-unofficial">
             Unofficial and unaffiliated. This tool does not distribute Aseprite binaries or replace the official paid edition.
           </p>
-        </section>
-
-        <section className="site-section site-how" id="how-it-works">
-          <div className="site-section-heading">
-            <p className="site-eyebrow"><span /> HOW IT WORKS</p>
-            <h2>Three steps.<br />One local app.</h2>
-          </div>
-          <ol className="site-process">
-            <li>
-              <div className="site-process-number">01</div>
-              <div><h3>Pick a release</h3><p>Choose a stable Aseprite source archive from the official GitHub releases.</p></div>
-            </li>
-            <li>
-              <div className="site-process-number">02</div>
-              <div><h3>Check your Mac</h3><p>Confirm Xcode, CMake, Ninja, disk space, and the personal-use EULA.</p></div>
-            </li>
-            <li>
-              <div className="site-process-number">03</div>
-              <div><h3>Build safely</h3><p>Verify, compile, sign, and stage the app before it reaches <code>~/Applications</code>.</p></div>
-            </li>
-          </ol>
         </section>
 
         <section className="site-section site-install" id="install">
@@ -295,6 +274,27 @@ function App() {
           <div className="site-requirements">
             <span>macOS 15.2+</span><span>Xcode + SDK</span><span>CMake</span><span>Ninja</span><span>~6 GB free</span>
           </div>
+        </section>
+
+        <section className="site-section site-how" id="how-it-works">
+          <div className="site-section-heading">
+            <p className="site-eyebrow"><span /> HOW IT WORKS</p>
+            <h2>Three steps.<br />One local app.</h2>
+          </div>
+          <ol className="site-process">
+            <li>
+              <div className="site-process-number">01</div>
+              <div><h3>Pick a release</h3><p>Choose a stable Aseprite source archive from the official GitHub releases.</p></div>
+            </li>
+            <li>
+              <div className="site-process-number">02</div>
+              <div><h3>Check your Mac</h3><p>Confirm Xcode, CMake, Ninja, disk space, and the personal-use EULA.</p></div>
+            </li>
+            <li>
+              <div className="site-process-number">03</div>
+              <div><h3>Build safely</h3><p>Verify, compile, sign, and stage the app before it reaches <code>~/Applications</code>.</p></div>
+            </li>
+          </ol>
         </section>
 
         <section className="site-section site-source" id="open-source">
