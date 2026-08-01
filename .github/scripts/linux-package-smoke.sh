@@ -220,8 +220,16 @@ verify_rpm() {
   fi
 
   local payload_root="$work_root/rpm-payload"
+  local cpio_archive="$work_root/rpm-payload.cpio"
   mkdir "$payload_root"
-  if ! rpm2cpio "$rpm_path" | (cd "$payload_root" && cpio --extract --make-directories --quiet --no-absolute-filenames); then
+  # Keep producer and consumer statuses independent. Some rpm2cpio versions
+  # can otherwise receive SIGPIPE after cpio reaches its trailer, even though
+  # the complete archive was validly extracted.
+  if ! rpm2cpio "$rpm_path" >"$cpio_archive"; then
+    fail "rpm2cpio could not decode the rpm payload"
+  fi
+  [[ -s "$cpio_archive" ]] || fail "rpm2cpio produced an empty payload archive"
+  if ! (cd "$payload_root" && cpio --extract --make-directories --quiet --no-absolute-filenames <"$cpio_archive"); then
     fail "rpm payload extraction failed"
   fi
   assert_application_tree "$payload_root"

@@ -406,7 +406,9 @@ fn durable_rename_no_replace_kind(
     }
     validate_absolute_normal_path(source)?;
     validate_absolute_normal_path(destination)?;
-    validate_directory_chain(source_parent)?;
+    validate_directory_chain(source_parent).map_err(|error| {
+        installer_error_context("validating the transaction parent before inspection", error)
+    })?;
     match std::fs::symlink_metadata(destination) {
         Ok(_) => {
             return Err(InstallerError::with_detail(
@@ -416,9 +418,16 @@ fn durable_rename_no_replace_kind(
             ))
         }
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.into()),
+        Err(error) => {
+            return Err(installer_error_context(
+                "checking whether the transaction destination is occupied",
+                error.into(),
+            ))
+        }
     }
-    let metadata = std::fs::symlink_metadata(source)?;
+    let metadata = std::fs::symlink_metadata(source).map_err(|error| {
+        installer_error_context("inspecting the transaction source", error.into())
+    })?;
     if metadata.file_type().is_symlink()
         || metadata_is_reparse(&metadata)
         || if directory {
@@ -436,10 +445,18 @@ fn durable_rename_no_replace_kind(
     // Revalidate immediately before the atomic syscall. Linux binds renameat2
     // to an O_NOFOLLOW directory fd; Windows binds the source and its in-place
     // destination name to a verified, non-delete-shared source handle below.
-    validate_directory_chain(source_parent)?;
-    platform_rename_no_replace(source, destination, directory)?;
-    validate_directory_chain(source_parent)?;
-    let activated = std::fs::symlink_metadata(destination)?;
+    validate_directory_chain(source_parent).map_err(|error| {
+        installer_error_context("revalidating the transaction parent before rename", error)
+    })?;
+    platform_rename_no_replace(source, destination, directory).map_err(|error| {
+        installer_error_context("performing the atomic no-replace rename", error.into())
+    })?;
+    validate_directory_chain(source_parent).map_err(|error| {
+        installer_error_context("revalidating the transaction parent after rename", error)
+    })?;
+    let activated = std::fs::symlink_metadata(destination).map_err(|error| {
+        installer_error_context("inspecting the activated transaction entry", error.into())
+    })?;
     if activated.file_type().is_symlink()
         || metadata_is_reparse(&activated)
         || if directory {
@@ -454,8 +471,15 @@ fn durable_rename_no_replace_kind(
             destination.display().to_string(),
         ));
     }
-    sync_directory(source_parent)?;
+    sync_directory(source_parent)
+        .map_err(|error| installer_error_context("syncing the transaction parent", error))?;
     Ok(())
+}
+
+fn installer_error_context(stage: &str, mut error: InstallerError) -> InstallerError {
+    let detail = error.detail.take().unwrap_or_else(|| error.message.clone());
+    error.detail = Some(format!("{stage} failed: {detail}"));
+    error
 }
 
 fn validate_absolute_normal_path(path: &Path) -> AppResult<()> {
