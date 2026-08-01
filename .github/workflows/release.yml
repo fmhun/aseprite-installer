@@ -185,6 +185,7 @@ jobs:
             patchelf \
             procps \
             rpm \
+            tar \
             wget \
             xdotool \
             xvfb
