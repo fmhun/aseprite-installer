@@ -132,6 +132,16 @@ jobs:
           umask 022
           bash .github/scripts/prepare-linux-appimage-runtime.sh
           npm run tauri build -- --ci --target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}" -- --locked
+          shopt -s nullglob
+          appimages=("src-tauri/target/${{ matrix.target }}/release/bundle/appimage/"*.AppImage)
+          appdirs=("src-tauri/target/${{ matrix.target }}/release/bundle/appimage/"*.AppDir)
+          if [[ "${#appimages[@]}" -ne 1 || "${#appdirs[@]}" -ne 1 ]]; then
+            echo "Expected exactly one AppImage and AppDir to normalize." >&2
+            exit 1
+          fi
+          bash .github/scripts/normalize-linux-appimage-permissions.sh \
+            "${appimages[0]}" \
+            "${appdirs[0]}"
       - name: Inspect macOS bundles
         if: runner.os == 'macOS'
         env:
