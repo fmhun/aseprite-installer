@@ -758,11 +758,14 @@ fn platform_rename_no_replace(
     // an ancestor. Requiring the parent handle to resolve to the exact lexical
     // parent closes the validation-to-syscall junction-swap window.
     let expected_parent = normalize_windows_handle_path(parent.as_os_str());
+    // Denying delete sharing on the verified parent keeps its directory name
+    // stable while the absolute destination below is resolved. Child entries
+    // can still be renamed because the handle shares reads and writes.
     let parent_handle =
-        open_windows_rename_handle(parent, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES)?;
+        open_windows_rename_handle(parent, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES, false)?;
     validate_windows_handle_type(&parent_handle, true)?;
-    let actual_parent =
-        normalize_windows_handle_path(windows_final_path(&parent_handle)?.as_os_str());
+    let final_parent = windows_final_path(&parent_handle)?;
+    let actual_parent = normalize_windows_handle_path(final_parent.as_os_str());
     if actual_parent != expected_parent {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -772,7 +775,7 @@ fn platform_rename_no_replace(
         ));
     }
 
-    let source_handle = open_windows_rename_handle(source, DELETE | FILE_READ_ATTRIBUTES)?;
+    let source_handle = open_windows_rename_handle(source, DELETE | FILE_READ_ATTRIBUTES, true)?;
     validate_windows_handle_type(&source_handle, directory)?;
     let expected_source = normalize_windows_handle_path(source.as_os_str());
     let actual_source =
@@ -786,7 +789,16 @@ fn platform_rename_no_replace(
         ));
     }
 
-    let destination_name = destination_name.encode_wide().collect::<Vec<_>>();
+    // SetFileInformationByHandle is most broadly supported with a NULL
+    // RootDirectory and a fully qualified destination. Build that path from
+    // the verified parent handle rather than reusing an unchecked lexical
+    // ancestor; the non-delete-sharing parent handle keeps it stable until the
+    // handle-based rename completes.
+    let canonical_destination = PathBuf::from(final_parent).join(destination_name);
+    let destination_name = canonical_destination
+        .as_os_str()
+        .encode_wide()
+        .collect::<Vec<_>>();
     if destination_name.is_empty()
         || destination_name.len() > (u32::MAX as usize / std::mem::size_of::<u16>())
     {
@@ -798,25 +810,36 @@ fn platform_rename_no_replace(
     let header_size = std::mem::size_of::<FILE_RENAME_INFO>();
     let name_bytes = destination_name.len() * std::mem::size_of::<u16>();
     let buffer_size = header_size
-        .checked_add(name_bytes.saturating_sub(std::mem::size_of::<u16>()))
+        // Microsoft requires the buffer passed for FileRenameInfo to contain
+        // sizeof(FILE_RENAME_INFO) *plus* the complete FileName byte count.
+        // The structure's trailing FileName[1] must not be subtracted here:
+        // some file-system drivers reject that shorter buffer before looking
+        // at the otherwise valid rename request.
+        .checked_add(name_bytes)
         .ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "the transaction rename information is too large",
             )
         })?;
-    let words = buffer_size.div_ceil(std::mem::size_of::<usize>());
+    let buffer_size = u32::try_from(buffer_size).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "the transaction rename information exceeds the Win32 buffer limit",
+        )
+    })?;
+    let words = (buffer_size as usize).div_ceil(std::mem::size_of::<usize>());
     let mut rename_buffer = vec![0_usize; words];
     let rename_info = rename_buffer.as_mut_ptr().cast::<FILE_RENAME_INFO>();
     unsafe {
-        // The classic FileRenameInfo class expresses the same kernel-enforced
-        // no-replace policy through ReplaceIfExists = false and is supported by
-        // every Windows version accepted by the application. FileRenameInfoEx
-        // can return ERROR_INVALID_FUNCTION on otherwise valid local volumes,
-        // even when no extended flags are requested. Durability is requested
-        // on the source handle itself with FILE_FLAG_WRITE_THROUGH.
+        // The classic FileRenameInfo class with an absolute destination and a
+        // NULL RootDirectory avoids the relative-handle form that some file-
+        // system drivers reject with ERROR_INVALID_FUNCTION. The source stays
+        // bound by its handle, and ReplaceIfExists = false remains a kernel-
+        // enforced atomic no-replace operation with no check-then-rename
+        // window. Durability is requested with FILE_FLAG_WRITE_THROUGH.
         (*rename_info).Anonymous.ReplaceIfExists = false;
-        (*rename_info).RootDirectory = parent_handle.as_raw_handle() as _;
+        (*rename_info).RootDirectory = std::ptr::null_mut();
         (*rename_info).FileNameLength = name_bytes as u32;
         std::ptr::copy_nonoverlapping(
             destination_name.as_ptr(),
@@ -829,7 +852,7 @@ fn platform_rename_no_replace(
             source_handle.as_raw_handle() as _,
             FileRenameInfo,
             rename_info.cast(),
-            buffer_size as u32,
+            buffer_size,
         )
     };
     if renamed == 0 {
@@ -848,13 +871,21 @@ fn platform_rename_no_replace(
 }
 
 #[cfg(target_os = "windows")]
-fn open_windows_rename_handle(path: &Path, access: u32) -> std::io::Result<OwnedHandle> {
+fn open_windows_rename_handle(
+    path: &Path,
+    access: u32,
+    share_delete: bool,
+) -> std::io::Result<OwnedHandle> {
     let path = wide(path);
+    let mut share_mode = FILE_SHARE_READ | FILE_SHARE_WRITE;
+    if share_delete {
+        share_mode |= FILE_SHARE_DELETE;
+    }
     let handle = unsafe {
         CreateFileW(
             path.as_ptr(),
             access,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            share_mode,
             std::ptr::null(),
             OPEN_EXISTING,
             FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_WRITE_THROUGH,
