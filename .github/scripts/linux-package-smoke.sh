@@ -80,8 +80,10 @@ assert_no_forbidden_payload() {
   if find "$payload_root" -xdev -type f -perm /6000 -print -quit | grep -q .; then
     fail "package contains a setuid or setgid file"
   fi
-  if find "$payload_root" -xdev -type f -perm /0022 -print -quit | grep -q .; then
-    fail "package contains a group- or world-writable file"
+  local writable_file
+  writable_file="$(find "$payload_root" -xdev -type f -perm /0022 -print -quit)"
+  if [[ -n "$writable_file" ]]; then
+    fail "package contains a group- or world-writable file: ${writable_file#"$payload_root"/} (mode $(stat --format='%a' "$writable_file"))"
   fi
 
   local canonical_root

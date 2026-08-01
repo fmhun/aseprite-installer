@@ -26,7 +26,7 @@ use walkdir::WalkDir;
 use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, FileRenameInfoEx, GetFileInformationByHandle, GetFinalPathNameByHandleW,
+    CreateFileW, FileRenameInfo, GetFileInformationByHandle, GetFinalPathNameByHandleW,
     SetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_DIRECTORY,
     FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_WRITE_THROUGH, FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES,
     FILE_RENAME_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
@@ -809,12 +809,13 @@ fn platform_rename_no_replace(
     let mut rename_buffer = vec![0_usize; words];
     let rename_info = rename_buffer.as_mut_ptr().cast::<FILE_RENAME_INFO>();
     unsafe {
-        // FileRenameInfoEx interprets this union member as flags. Zero is the
-        // kernel-enforced no-replace policy. Durability is requested on the
-        // source handle itself with FILE_FLAG_WRITE_THROUGH: Microsoft
-        // documents that NTFS flushes metadata changes, including rename, for
-        // operations issued through a write-through handle.
-        (*rename_info).Anonymous.Flags = 0;
+        // The classic FileRenameInfo class expresses the same kernel-enforced
+        // no-replace policy through ReplaceIfExists = false and is supported by
+        // every Windows version accepted by the application. FileRenameInfoEx
+        // can return ERROR_INVALID_FUNCTION on otherwise valid local volumes,
+        // even when no extended flags are requested. Durability is requested
+        // on the source handle itself with FILE_FLAG_WRITE_THROUGH.
+        (*rename_info).Anonymous.ReplaceIfExists = false;
         (*rename_info).RootDirectory = parent_handle.as_raw_handle() as _;
         (*rename_info).FileNameLength = name_bytes as u32;
         std::ptr::copy_nonoverlapping(
@@ -826,7 +827,7 @@ fn platform_rename_no_replace(
     let renamed = unsafe {
         SetFileInformationByHandle(
             source_handle.as_raw_handle() as _,
-            FileRenameInfoEx,
+            FileRenameInfo,
             rename_info.cast(),
             buffer_size as u32,
         )
@@ -1092,7 +1093,8 @@ mod tests {
 
         let second_source = directory_path.join("second.json");
         std::fs::write(&second_source, b"must survive").unwrap();
-        assert!(durable_rename_file_no_replace(&second_source, &destination).is_err());
+        let collision = durable_rename_file_no_replace(&second_source, &destination).unwrap_err();
+        assert_eq!(collision.code, "transactionCollision");
         assert_eq!(std::fs::read(&second_source).unwrap(), b"must survive");
         assert_eq!(std::fs::read(&destination).unwrap(), b"transaction proof");
     }

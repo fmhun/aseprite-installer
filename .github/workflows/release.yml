@@ -197,7 +197,15 @@ jobs:
       - name: Test native target
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked --target "${{ matrix.target }}"
       - name: Build platform bundles
+        if: runner.os != 'Linux'
         run: npm run tauri build -- --ci --target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}" -- --locked
+      - name: Build Linux bundles
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          umask 022
+          bash .github/scripts/prepare-linux-appimage-runtime.sh
+          npm run tauri build -- --ci --target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}" -- --locked
       - name: Verify and normalize macOS artifacts
         if: runner.os == 'macOS'
         env:
