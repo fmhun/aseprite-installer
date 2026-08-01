@@ -550,13 +550,14 @@ fn validate_directory_chain(path: &Path) -> AppResult<()> {
 fn validate_directory_chain(path: &Path) -> AppResult<()> {
     validate_absolute_normal_path(path)?;
 
-    // Rust's Windows metadata query can return ERROR_INVALID_FUNCTION for a
-    // valid drive root on some volumes. GetFileAttributesW is the documented
-    // path-level primitive for this audit and reports a link's own reparse bit.
+    // A verbatim disk prefix has an implicit root in Rust, so `\\?\C:` alone
+    // reports as absolute even though it is not a valid Win32 query path. Skip
+    // that prefix-only state, then audit the real root and every descendant.
     let mut current = PathBuf::new();
     for component in path.components() {
+        let prefix_only = matches!(component, std::path::Component::Prefix(_));
         current.push(component.as_os_str());
-        if !current.is_absolute() {
+        if prefix_only || !current.is_absolute() {
             continue;
         }
         let attributes = windows_path_attributes(&current)?;
