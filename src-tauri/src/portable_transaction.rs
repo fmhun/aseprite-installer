@@ -23,13 +23,13 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use walkdir::WalkDir;
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, INVALID_HANDLE_VALUE};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, FileRenameInfoEx, GetFileInformationByHandle, GetFinalPathNameByHandleW,
-    SetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_DIRECTORY,
-    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_WRITE_THROUGH, FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES,
-    FILE_RENAME_INFO, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    CreateFileW, FileRenameInfo, GetFileAttributesW, GetFileInformationByHandle,
+    GetFinalPathNameByHandleW, SetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, DELETE,
+    FILE_ATTRIBUTE_DIRECTORY, FILE_FLAG_BACKUP_SEMANTICS, FILE_READ_ATTRIBUTES, FILE_RENAME_INFO,
+    FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_TRAVERSE, INVALID_FILE_ATTRIBUTES, OPEN_EXISTING,
 };
 
 pub(crate) const PORTABLE_JOURNAL_SCHEMA_VERSION: u32 = 2;
@@ -406,27 +406,26 @@ fn durable_rename_no_replace_kind(
     }
     validate_absolute_normal_path(source)?;
     validate_absolute_normal_path(destination)?;
-    validate_directory_chain(source_parent)?;
-    match std::fs::symlink_metadata(destination) {
-        Ok(_) => {
-            return Err(InstallerError::with_detail(
-                "transactionCollision",
-                "A no-replace transaction destination is already occupied.",
-                destination.display().to_string(),
-            ))
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.into()),
+    validate_directory_chain(source_parent).map_err(|error| {
+        installer_error_context("validating the transaction parent before inspection", error)
+    })?;
+    if transaction_destination_is_occupied(destination).map_err(|error| {
+        installer_error_context(
+            "checking whether the transaction destination is occupied",
+            error.into(),
+        )
+    })? {
+        return Err(InstallerError::with_detail(
+            "transactionCollision",
+            "A no-replace transaction destination is already occupied.",
+            destination.display().to_string(),
+        ));
     }
-    let metadata = std::fs::symlink_metadata(source)?;
-    if metadata.file_type().is_symlink()
-        || metadata_is_reparse(&metadata)
-        || if directory {
-            !metadata.is_dir()
-        } else {
-            !metadata.is_file()
-        }
-    {
+    let source_is_valid =
+        transaction_entry_matches_expected_type(source, directory).map_err(|error| {
+            installer_error_context("inspecting the transaction source", error.into())
+        })?;
+    if !source_is_valid {
         return Err(InstallerError::with_detail(
             "transactionType",
             "Only a real transaction entry of the expected type can be activated.",
@@ -434,28 +433,74 @@ fn durable_rename_no_replace_kind(
         ));
     }
     // Revalidate immediately before the atomic syscall. Linux binds renameat2
-    // to an O_NOFOLLOW directory fd; Windows binds both the source and the
-    // destination basename to verified handles below.
-    validate_directory_chain(source_parent)?;
-    platform_rename_no_replace(source, destination, directory)?;
-    validate_directory_chain(source_parent)?;
-    let activated = std::fs::symlink_metadata(destination)?;
-    if activated.file_type().is_symlink()
-        || metadata_is_reparse(&activated)
-        || if directory {
-            !activated.is_dir()
-        } else {
-            !activated.is_file()
-        }
-    {
+    // to an O_NOFOLLOW directory fd; Windows binds the source and its in-place
+    // destination name to a verified, non-delete-shared source handle below.
+    validate_directory_chain(source_parent).map_err(|error| {
+        installer_error_context("revalidating the transaction parent before rename", error)
+    })?;
+    platform_rename_no_replace(source, destination, directory).map_err(|error| {
+        installer_error_context("performing the atomic no-replace rename", error.into())
+    })?;
+    validate_directory_chain(source_parent).map_err(|error| {
+        installer_error_context("revalidating the transaction parent after rename", error)
+    })?;
+    let activated_is_valid = transaction_entry_matches_expected_type(destination, directory)
+        .map_err(|error| {
+            installer_error_context("inspecting the activated transaction entry", error.into())
+        })?;
+    if !activated_is_valid {
         return Err(InstallerError::with_detail(
             "transactionType",
             "The activated transaction entry changed type across its rename.",
             destination.display().to_string(),
         ));
     }
-    sync_directory(source_parent)?;
+    sync_directory(source_parent)
+        .map_err(|error| installer_error_context("syncing the transaction parent", error))?;
     Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn transaction_destination_is_occupied(path: &Path) -> std::io::Result<bool> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn transaction_destination_is_occupied(path: &Path) -> std::io::Result<bool> {
+    match windows_path_attributes(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.raw_os_error() == Some(ERROR_FILE_NOT_FOUND as i32) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn transaction_entry_matches_expected_type(path: &Path, directory: bool) -> std::io::Result<bool> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    Ok(!metadata.file_type().is_symlink()
+        && !metadata_is_reparse(&metadata)
+        && if directory {
+            metadata.is_dir()
+        } else {
+            metadata.is_file()
+        })
+}
+
+#[cfg(target_os = "windows")]
+fn transaction_entry_matches_expected_type(path: &Path, directory: bool) -> std::io::Result<bool> {
+    let attributes = windows_path_attributes(path)?;
+    Ok(attributes & FILE_ATTRIBUTE_REPARSE_POINT == 0
+        && (attributes & FILE_ATTRIBUTE_DIRECTORY != 0) == directory)
+}
+
+fn installer_error_context(stage: &str, mut error: InstallerError) -> InstallerError {
+    let detail = error.detail.take().unwrap_or_else(|| error.message.clone());
+    error.detail = Some(format!("{stage} failed: {detail}"));
+    error
 }
 
 fn validate_absolute_normal_path(path: &Path) -> AppResult<()> {
@@ -478,6 +523,7 @@ fn validate_absolute_normal_path(path: &Path) -> AppResult<()> {
     Ok(())
 }
 
+#[cfg(not(target_os = "windows"))]
 fn validate_directory_chain(path: &Path) -> AppResult<()> {
     validate_absolute_normal_path(path)?;
     let mut current = PathBuf::new();
@@ -488,6 +534,34 @@ fn validate_directory_chain(path: &Path) -> AppResult<()> {
         }
         let metadata = std::fs::symlink_metadata(&current)?;
         if metadata.file_type().is_symlink() || metadata_is_reparse(&metadata) || !metadata.is_dir()
+        {
+            return Err(InstallerError::with_detail(
+                "transactionParentLink",
+                "A transaction directory chain contains a link, junction, or non-directory.",
+                current.display().to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn validate_directory_chain(path: &Path) -> AppResult<()> {
+    validate_absolute_normal_path(path)?;
+
+    // A verbatim disk prefix has an implicit root in Rust, so `\\?\C:` alone
+    // reports as absolute even though it is not a valid Win32 query path. Skip
+    // that prefix-only state, then audit the real root and every descendant.
+    let mut current = PathBuf::new();
+    for component in path.components() {
+        let prefix_only = matches!(component, std::path::Component::Prefix(_));
+        current.push(component.as_os_str());
+        if prefix_only || !current.is_absolute() {
+            continue;
+        }
+        let attributes = windows_path_attributes(&current)?;
+        if attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
+            || attributes & FILE_ATTRIBUTE_DIRECTORY == 0
         {
             return Err(InstallerError::with_detail(
                 "transactionParentLink",
@@ -758,11 +832,16 @@ fn platform_rename_no_replace(
     // an ancestor. Requiring the parent handle to resolve to the exact lexical
     // parent closes the validation-to-syscall junction-swap window.
     let expected_parent = normalize_windows_handle_path(parent.as_os_str());
-    let parent_handle =
-        open_windows_rename_handle(parent, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES)?;
-    validate_windows_handle_type(&parent_handle, true)?;
-    let actual_parent =
-        normalize_windows_handle_path(windows_final_path(&parent_handle)?.as_os_str());
+    // Denying delete sharing keeps the verified parent stable through source
+    // validation and the syscall. Child entries can still be renamed because
+    // the directory handle shares reads and writes.
+    let parent_handle = open_windows_rename_handle(parent, FILE_TRAVERSE | FILE_READ_ATTRIBUTES)
+        .map_err(|error| windows_io_context("opening the transaction parent", error))?;
+    validate_windows_handle_type(&parent_handle, true)
+        .map_err(|error| windows_io_context("validating the transaction parent", error))?;
+    let final_parent = windows_final_path(&parent_handle)
+        .map_err(|error| windows_io_context("resolving the transaction parent", error))?;
+    let actual_parent = normalize_windows_handle_path(final_parent.as_os_str());
     if actual_parent != expected_parent {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -772,11 +851,16 @@ fn platform_rename_no_replace(
         ));
     }
 
-    let source_handle = open_windows_rename_handle(source, DELETE | FILE_READ_ATTRIBUTES)?;
-    validate_windows_handle_type(&source_handle, directory)?;
+    let source_handle = open_windows_rename_handle(source, DELETE | FILE_READ_ATTRIBUTES)
+        .map_err(|error| windows_io_context("opening the transaction source", error))?;
+    validate_windows_handle_type(&source_handle, directory)
+        .map_err(|error| windows_io_context("validating the transaction source", error))?;
     let expected_source = normalize_windows_handle_path(source.as_os_str());
-    let actual_source =
-        normalize_windows_handle_path(windows_final_path(&source_handle)?.as_os_str());
+    let actual_source = normalize_windows_handle_path(
+        windows_final_path(&source_handle)
+            .map_err(|error| windows_io_context("resolving the transaction source", error))?
+            .as_os_str(),
+    );
     if actual_source != expected_source {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -786,7 +870,15 @@ fn platform_rename_no_replace(
         ));
     }
 
-    let destination_name = destination_name.encode_wide().collect::<Vec<_>>();
+    // SetFileInformationByHandle's Win32 FileRenameInfo implementation rejects
+    // a non-NULL RootDirectory on supported older systems. Build the required
+    // absolute destination from the verified parent handle instead of the
+    // process CWD or an unchecked lexical spelling.
+    let canonical_destination = PathBuf::from(final_parent).join(destination_name);
+    let destination_name = canonical_destination
+        .as_os_str()
+        .encode_wide()
+        .collect::<Vec<_>>();
     if destination_name.is_empty()
         || destination_name.len() > (u32::MAX as usize / std::mem::size_of::<u16>())
     {
@@ -798,24 +890,38 @@ fn platform_rename_no_replace(
     let header_size = std::mem::size_of::<FILE_RENAME_INFO>();
     let name_bytes = destination_name.len() * std::mem::size_of::<u16>();
     let buffer_size = header_size
-        .checked_add(name_bytes.saturating_sub(std::mem::size_of::<u16>()))
+        // Microsoft requires the buffer passed for FileRenameInfo to contain
+        // sizeof(FILE_RENAME_INFO) *plus* the complete FileName byte count.
+        // The structure's trailing FileName[1] must not be subtracted here:
+        // some file-system drivers reject that shorter buffer before looking
+        // at the otherwise valid rename request.
+        .checked_add(name_bytes)
         .ok_or_else(|| {
             std::io::Error::new(
                 std::io::ErrorKind::InvalidInput,
                 "the transaction rename information is too large",
             )
         })?;
-    let words = buffer_size.div_ceil(std::mem::size_of::<usize>());
+    let buffer_size = u32::try_from(buffer_size).map_err(|_| {
+        std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "the transaction rename information exceeds the Win32 buffer limit",
+        )
+    })?;
+    let words = (buffer_size as usize).div_ceil(std::mem::size_of::<usize>());
     let mut rename_buffer = vec![0_usize; words];
     let rename_info = rename_buffer.as_mut_ptr().cast::<FILE_RENAME_INFO>();
     unsafe {
-        // FileRenameInfoEx interprets this union member as flags. Zero is the
-        // kernel-enforced no-replace policy. Durability is requested on the
-        // source handle itself with FILE_FLAG_WRITE_THROUGH: Microsoft
-        // documents that NTFS flushes metadata changes, including rename, for
-        // operations issued through a write-through handle.
-        (*rename_info).Anonymous.Flags = 0;
-        (*rename_info).RootDirectory = parent_handle.as_raw_handle() as _;
+        // The verified parent and source handles remain open without delete
+        // sharing until the call completes. ReplaceIfExists = false stays a
+        // kernel-enforced atomic no-replace operation. The corrected full buffer
+        // size above is required even though FILE_RENAME_INFO declares a trailing
+        // FileName[1]. WRITE_THROUGH is optional durability/cache behavior rather
+        // than part of atomic no-replace semantics, so it is omitted for cross-
+        // file-system compatibility. The durable journal provides recovery if a
+        // metadata update is interrupted.
+        (*rename_info).Anonymous.ReplaceIfExists = false;
+        (*rename_info).RootDirectory = std::ptr::null_mut();
         (*rename_info).FileNameLength = name_bytes as u32;
         std::ptr::copy_nonoverlapping(
             destination_name.as_ptr(),
@@ -826,18 +932,24 @@ fn platform_rename_no_replace(
     let renamed = unsafe {
         SetFileInformationByHandle(
             source_handle.as_raw_handle() as _,
-            FileRenameInfoEx,
+            FileRenameInfo,
             rename_info.cast(),
-            buffer_size as u32,
+            buffer_size,
         )
     };
     if renamed == 0 {
-        return Err(std::io::Error::last_os_error());
+        return Err(windows_io_context(
+            "renaming the transaction source with FileRenameInfo",
+            std::io::Error::last_os_error(),
+        ));
     }
 
     let expected_destination = normalize_windows_handle_path(destination.as_os_str());
-    let actual_destination =
-        normalize_windows_handle_path(windows_final_path(&source_handle)?.as_os_str());
+    let actual_destination = normalize_windows_handle_path(
+        windows_final_path(&source_handle)
+            .map_err(|error| windows_io_context("resolving the renamed transaction source", error))?
+            .as_os_str(),
+    );
     if actual_destination != expected_destination {
         return Err(std::io::Error::other(format!(
                 "renamed transaction handle resolved unexpectedly: expected {expected_destination}, found {actual_destination}"
@@ -847,16 +959,21 @@ fn platform_rename_no_replace(
 }
 
 #[cfg(target_os = "windows")]
+fn windows_io_context(stage: &str, error: std::io::Error) -> std::io::Error {
+    std::io::Error::new(error.kind(), format!("{stage} failed: {error}"))
+}
+
+#[cfg(target_os = "windows")]
 fn open_windows_rename_handle(path: &Path, access: u32) -> std::io::Result<OwnedHandle> {
     let path = wide(path);
     let handle = unsafe {
         CreateFileW(
             path.as_ptr(),
             access,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE,
             std::ptr::null(),
             OPEN_EXISTING,
-            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_WRITE_THROUGH,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
             std::ptr::null_mut(),
         )
     };
@@ -864,6 +981,17 @@ fn open_windows_rename_handle(path: &Path, access: u32) -> std::io::Result<Owned
         Err(std::io::Error::last_os_error())
     } else {
         Ok(unsafe { OwnedHandle::from_raw_handle(handle as RawHandle) })
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn windows_path_attributes(path: &Path) -> std::io::Result<u32> {
+    let path = wide(path);
+    let attributes = unsafe { GetFileAttributesW(path.as_ptr()) };
+    if attributes == INVALID_FILE_ATTRIBUTES {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(attributes)
     }
 }
 
@@ -939,7 +1067,9 @@ fn sync_directory(path: &Path) -> AppResult<()> {
 #[cfg(target_os = "windows")]
 fn sync_directory(_path: &Path) -> AppResult<()> {
     // Windows does not provide a portable directory flush with Rust's file API.
-    // Transaction renames and journal replacement use Win32 WRITE_THROUGH flags.
+    // The durable transaction journal is retained until all rename and state
+    // operations complete, so startup recovery can reconcile an interrupted
+    // metadata update without requiring optional write-through handle flags.
     Ok(())
 }
 
@@ -1092,9 +1222,32 @@ mod tests {
 
         let second_source = directory_path.join("second.json");
         std::fs::write(&second_source, b"must survive").unwrap();
-        assert!(durable_rename_file_no_replace(&second_source, &destination).is_err());
+        let collision = durable_rename_file_no_replace(&second_source, &destination).unwrap_err();
+        assert_eq!(collision.code, "transactionCollision");
         assert_eq!(std::fs::read(&second_source).unwrap(), b"must survive");
         assert_eq!(std::fs::read(&destination).unwrap(), b"transaction proof");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_transaction_path_probes_preserve_type_and_missing_path_semantics() {
+        let directory = tempfile::tempdir().unwrap();
+        let directory_path = std::fs::canonicalize(directory.path()).unwrap();
+        let file = directory_path.join("entry.json");
+        std::fs::write(&file, b"transaction proof").unwrap();
+
+        validate_directory_chain(&directory_path).unwrap();
+        assert!(transaction_entry_matches_expected_type(&directory_path, true).unwrap());
+        assert!(!transaction_entry_matches_expected_type(&directory_path, false).unwrap());
+        assert!(transaction_entry_matches_expected_type(&file, false).unwrap());
+        assert!(!transaction_entry_matches_expected_type(&file, true).unwrap());
+        assert!(transaction_destination_is_occupied(&directory_path).unwrap());
+        assert!(transaction_destination_is_occupied(&file).unwrap());
+        assert!(!transaction_destination_is_occupied(&directory_path.join("missing")).unwrap());
+        assert!(transaction_destination_is_occupied(
+            &directory_path.join("missing-parent").join("entry")
+        )
+        .is_err());
     }
 
     #[test]

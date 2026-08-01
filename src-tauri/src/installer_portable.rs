@@ -53,11 +53,12 @@ use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, FileDispositionInfoEx, GetFileInformationByHandle, GetFinalPathNameByHandleW,
-    SetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_DIRECTORY,
-    FILE_DISPOSITION_FLAG_DELETE, FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE,
-    FILE_DISPOSITION_FLAG_POSIX_SEMANTICS, FILE_DISPOSITION_INFO_EX, FILE_FLAG_BACKUP_SEMANTICS,
-    FILE_FLAG_WRITE_THROUGH, FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE,
-    FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    GetLongPathNameW, SetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, DELETE,
+    FILE_ATTRIBUTE_DIRECTORY, FILE_DISPOSITION_FLAG_DELETE,
+    FILE_DISPOSITION_FLAG_IGNORE_READONLY_ATTRIBUTE, FILE_DISPOSITION_FLAG_POSIX_SEMANTICS,
+    FILE_DISPOSITION_INFO_EX, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_WRITE_THROUGH,
+    FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
+    FILE_SHARE_WRITE, OPEN_EXISTING,
 };
 
 const SKIA_TAG: &str = "m124-08a5439a6b";
@@ -2544,7 +2545,7 @@ fn windows_validate_cleanup_handle(
 ) -> AppResult<()> {
     windows_validate_cleanup_type(handle, directory)?;
     let actual = windows_normalize_final_path(&windows_cleanup_final_path(handle)?);
-    let expected = windows_normalize_final_path(expected_path.as_os_str());
+    let expected = windows_normalize_final_path(&windows_cleanup_long_path(expected_path)?);
     if actual != expected {
         return Err(recovery_conflict(
             "A quarantined cleanup path resolved through a junction or changed while it was opened.",
@@ -2635,6 +2636,31 @@ fn windows_cleanup_final_path(handle: &OwnedHandle) -> AppResult<std::ffi::OsStr
     }
     path.truncate(written as usize);
     Ok(std::ffi::OsString::from_wide(&path))
+}
+
+#[cfg(target_os = "windows")]
+fn windows_cleanup_long_path(path: &Path) -> AppResult<std::ffi::OsString> {
+    // GetFinalPathNameByHandleW returns long component names even when the
+    // caller reached the same entry through an 8.3 alias. Expand only that
+    // spelling before comparing paths so junction resolution still differs.
+    let path = windows_wide(path);
+    let required = unsafe { GetLongPathNameW(path.as_ptr(), std::ptr::null_mut(), 0) };
+    if required == 0 {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    let mut long_path = vec![0_u16; required as usize];
+    let written = unsafe {
+        GetLongPathNameW(
+            path.as_ptr(),
+            long_path.as_mut_ptr(),
+            long_path.len() as u32,
+        )
+    };
+    if written == 0 || written as usize >= long_path.len() {
+        return Err(std::io::Error::last_os_error().into());
+    }
+    long_path.truncate(written as usize);
+    Ok(std::ffi::OsString::from_wide(&long_path))
 }
 
 #[cfg(target_os = "windows")]
@@ -5036,7 +5062,7 @@ mod tests {
         assert!(SKIA_ASSET.url.contains(SKIA_TAG));
         assert!(SKIA_ASSET.name.ends_with("-x64.zip"));
         assert_eq!(SKIA_ASSET.sha256.len(), 64);
-        assert!(SKIA_ASSET.size > 20_000_000);
+        const { assert!(SKIA_ASSET.size > 20_000_000) };
     }
 
     #[test]

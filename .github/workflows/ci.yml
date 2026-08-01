@@ -98,7 +98,6 @@ jobs:
           sudo apt-get install --yes --no-install-recommends \
             binutils \
             build-essential \
-            cpio \
             curl \
             dbus-x11 \
             desktop-file-utils \
@@ -112,6 +111,7 @@ jobs:
             patchelf \
             procps \
             rpm \
+            tar \
             wget \
             xdotool \
             xvfb
@@ -123,7 +123,25 @@ jobs:
       - name: Test native target
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked --target ${{ matrix.target }}
       - name: Build native bundles
+        if: runner.os != 'Linux'
         run: npm run tauri build -- --ci --target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}" -- --locked
+      - name: Build native Linux bundles
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          umask 022
+          bash .github/scripts/prepare-linux-appimage-runtime.sh
+          npm run tauri build -- --ci --target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}" -- --locked
+          shopt -s nullglob
+          appimages=("src-tauri/target/${{ matrix.target }}/release/bundle/appimage/"*.AppImage)
+          appdirs=("src-tauri/target/${{ matrix.target }}/release/bundle/appimage/"*.AppDir)
+          if [[ "${#appimages[@]}" -ne 1 || "${#appdirs[@]}" -ne 1 ]]; then
+            echo "Expected exactly one AppImage and AppDir to normalize." >&2
+            exit 1
+          fi
+          bash .github/scripts/normalize-linux-appimage-permissions.sh \
+            "${appimages[0]}" \
+            "${appdirs[0]}"
       - name: Inspect macOS bundles
         if: runner.os == 'macOS'
         env:
@@ -139,7 +157,7 @@ jobs:
           test "${#dmg_files[@]}" -eq 1
           codesign --verify --deep --strict --verbose=2 "$app_path"
           executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
-          lipo -verify_arch "$EXPECTED_ARCH" "$app_path/Contents/MacOS/$executable_name"
+          lipo "$app_path/Contents/MacOS/$executable_name" -verify_arch "$EXPECTED_ARCH"
           if find "$app_path" \( -name 'Aseprite.app' -o -name 'aseprite' -o -name 'aseprite.exe' -o -iname 'Aseprite-v*-Source.zip' -o -iname 'Skia-*-Release-*.zip' -o -iname 'libskia*' -o -iname 'skia.lib' -o -iname 'skia.dll' -o -iname 'icudtl.dat' \) -print -quit | grep -q .; then
             echo "The macOS installer bundle contains a forbidden upstream payload." >&2
             exit 1

@@ -50,6 +50,7 @@ impl InstallerPaths {
         }
     }
 
+    #[cfg(target_os = "macos")]
     pub fn ensure(&self) -> AppResult<()> {
         for directory in [
             &self.data_dir,
@@ -275,6 +276,7 @@ impl AppState {
         load_managed_state(&self.paths.registry_file)
     }
 
+    #[cfg(target_os = "macos")]
     pub fn save_managed_state(&self, managed: &ManagedState) -> AppResult<()> {
         save_managed_state(&self.paths.registry_file, managed)
     }
@@ -383,6 +385,7 @@ pub(crate) fn open_lock_file(path: &Path) -> AppResult<File> {
     Ok(file)
 }
 
+#[cfg(any(target_os = "macos", test))]
 pub fn save_managed_state(path: &Path, managed: &ManagedState) -> AppResult<()> {
     match save_managed_state_with_durability(path, managed)? {
         CommitDurability::Durable => {}

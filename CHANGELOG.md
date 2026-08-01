@@ -4,6 +4,8 @@ All notable changes to Aseprite Installer are documented here.
 
 ## Unreleased
 
+## 0.2.0 — 2026-08-01
+
 - Added native Windows 11 x64 support with a current-user NSIS installer and an MSI for managed deployment.
 - Added Linux x86_64 support with AppImage, deb, and rpm packages built on Ubuntu 22.04.
 - Split the Tauri bundle configuration into shared, macOS, Linux, and Windows policies with updater artifacts explicitly disabled.

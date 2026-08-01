@@ -2493,28 +2493,6 @@ fn trusted_windows_root(error_code: &str) -> AppResult<PathBuf> {
     Ok(system_root)
 }
 
-pub async fn terminate_process_tree(process_id: u32) -> AppResult<()> {
-    let taskkill = trusted_system_binary(Path::new("System32/taskkill.exe"), "buildTerminate")?;
-    let mut command = tokio::process::Command::new(&taskkill);
-    sanitize_runtime_command(&mut command);
-    let status = command
-        .args(["/PID", &process_id.to_string(), "/T", "/F"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .await?;
-    if status.success() {
-        Ok(())
-    } else {
-        Err(InstallerError::with_detail(
-            "buildTerminate",
-            "Windows could not terminate the complete compiler process tree.",
-            format!("{} exited with {status}", taskkill.display()),
-        ))
-    }
-}
-
 fn sanitize_runtime_command(command: &mut tokio::process::Command) {
     for variable in [
         "__COMPAT_LAYER",
@@ -3598,7 +3576,7 @@ mod tests {
             directory.path().join("data"),
             directory.path().join("cache"),
         );
-        paths.ensure().unwrap();
+        std::fs::create_dir_all(&paths.data_dir).unwrap();
         let lock_path = paths.data_dir.join(".operation.lock");
         let held = OpenOptions::new()
             .create(true)

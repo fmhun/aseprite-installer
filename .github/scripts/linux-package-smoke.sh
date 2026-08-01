@@ -80,8 +80,10 @@ assert_no_forbidden_payload() {
   if find "$payload_root" -xdev -type f -perm /6000 -print -quit | grep -q .; then
     fail "package contains a setuid or setgid file"
   fi
-  if find "$payload_root" -xdev -type f -perm /0022 -print -quit | grep -q .; then
-    fail "package contains a group- or world-writable file"
+  local writable_file
+  writable_file="$(find "$payload_root" -xdev -type f -perm /0022 -print -quit)"
+  if [[ -n "$writable_file" ]]; then
+    fail "package contains a group- or world-writable file: ${writable_file#"$payload_root"/} (mode $(stat --format='%a' "$writable_file"))"
   fi
 
   local canonical_root
@@ -105,7 +107,8 @@ assert_desktop_payload() {
 
   while IFS= read -r -d '' desktop_file; do
     desktop_count=$((desktop_count + 1))
-    desktop-file-validate "$desktop_file"
+    desktop-file-validate "$desktop_file" || \
+      fail "desktop-file-validate rejected ${desktop_file#"$payload_root"/}"
     if ! grep -Eq '^Exec=(/usr/bin/)?aseprite-installer([[:space:]]|$)' "$desktop_file"; then
       fail "desktop launcher does not execute aseprite-installer directly: ${desktop_file#"$payload_root"/}"
     fi
@@ -174,7 +177,8 @@ verify_deb() {
   done
   [[ -f "$control_root/md5sums" ]] || fail "deb is missing its payload checksum manifest"
   dpkg-deb --extract "$deb" "$payload_root"
-  (cd "$payload_root" && md5sum --check "$control_root/md5sums")
+  (cd "$payload_root" && md5sum --check "$control_root/md5sums") || \
+    fail "deb payload checksum validation failed"
   assert_application_tree "$payload_root"
 }
 
@@ -184,12 +188,24 @@ verify_rpm() {
   [[ -f "$rpm_path" && ! -L "$rpm_path" ]] || fail "rpm must be one regular file"
 
   local package_name architecture dependencies scripts triggers signature_info
-  package_name="$(rpm --query --package --queryformat '%{NAME}' "$rpm_path")"
-  architecture="$(rpm --query --package --queryformat '%{ARCH}' "$rpm_path")"
-  dependencies="$(rpm --query --package --requires "$rpm_path")"
-  scripts="$(rpm --query --package --scripts "$rpm_path")"
-  triggers="$(rpm --query --package --triggers "$rpm_path")"
-  signature_info="$(rpm --checksig --verbose "$rpm_path")"
+  if ! package_name="$(rpm --query --package --queryformat '%{NAME}' "$rpm_path" 2>&1)"; then
+    fail "rpm package-name query failed: $package_name"
+  fi
+  if ! architecture="$(rpm --query --package --queryformat '%{ARCH}' "$rpm_path" 2>&1)"; then
+    fail "rpm architecture query failed: $architecture"
+  fi
+  if ! dependencies="$(rpm --query --package --requires "$rpm_path" 2>&1)"; then
+    fail "rpm dependency query failed: $dependencies"
+  fi
+  if ! scripts="$(rpm --query --package --scripts "$rpm_path" 2>&1)"; then
+    fail "rpm scriptlet query failed: $scripts"
+  fi
+  if ! triggers="$(rpm --query --package --triggers "$rpm_path" 2>&1)"; then
+    fail "rpm trigger query failed: $triggers"
+  fi
+  if ! signature_info="$(rpm --checksig --verbose "$rpm_path" 2>&1)"; then
+    fail "rpm digest and signature verification command failed: $signature_info"
+  fi
 
   [[ "$package_name" == "$EXPECTED_PACKAGE_NAME" ]] || fail "unexpected rpm package name: $package_name"
   [[ "$architecture" == x86_64 ]] || fail "unexpected rpm architecture: $architecture"
@@ -204,8 +220,24 @@ verify_rpm() {
   fi
 
   local payload_root="$work_root/rpm-payload"
+  local tar_archive="$work_root/rpm-payload.tar"
   mkdir "$payload_root"
-  rpm2cpio "$rpm_path" | (cd "$payload_root" && cpio --extract --make-directories --quiet --no-absolute-filenames)
+  # Ubuntu 22.04's rpm2cpio depends on an archive-size tag that rpm-rs packages
+  # can omit. rpm2archive reads through librpm instead and verifies per-file
+  # digests while producing an archive for inspection without installation.
+  if ! rpm2archive --nocompression - <"$rpm_path" >"$tar_archive"; then
+    fail "rpm2archive could not decode the rpm payload"
+  fi
+  [[ -s "$tar_archive" ]] || fail "rpm2archive produced an empty payload archive"
+  if ! tar \
+    --extract \
+    --file "$tar_archive" \
+    --directory "$payload_root" \
+    --no-same-owner \
+    --same-permissions \
+    --delay-directory-restore; then
+    fail "rpm payload extraction failed"
+  fi
   assert_application_tree "$payload_root"
 }
 
@@ -361,7 +393,6 @@ run_rpm_container_smoke() {
 
   dnf5 --assumeyes --setopt=install_weak_deps=False install \
     binutils \
-    cpio \
     dbus-daemon \
     desktop-file-utils \
     file \
@@ -369,11 +400,12 @@ run_rpm_container_smoke() {
     procps-ng \
     rpm \
     shadow-utils \
+    tar \
     util-linux \
     xdotool \
     xorg-x11-server-Xvfb
 
-  for command_name in cpio dbus-run-session desktop-file-validate dnf5 file find readelf realpath rpm rpm2cpio runuser setsid timeout useradd Xvfb xdotool; do
+  for command_name in dbus-run-session desktop-file-validate dnf5 file find readelf realpath rpm rpm2archive runuser setsid tar timeout useradd Xvfb xdotool; do
     require_command "$command_name"
   done
 
@@ -417,11 +449,14 @@ case "$mode" in
     [[ "${ID:-}" == ubuntu && "${VERSION_ID:-}" == 22.04 ]] || {
       fail "host package smoke requires Ubuntu 22.04, found ${ID:-unknown} ${VERSION_ID:-unknown}"
     }
-    for command_name in cpio dbus-run-session desktop-file-validate docker dpkg-deb file find git md5sum readelf realpath rpm rpm2cpio setsid sudo timeout Xvfb xdotool; do
+    for command_name in dbus-run-session desktop-file-validate docker dpkg-deb file find git md5sum readelf realpath rpm rpm2archive setsid sudo tar timeout Xvfb xdotool; do
       require_command "$command_name"
     done
+    echo "Verifying the AppImage payload..."
     verify_appimage "$1"
+    echo "Verifying the deb payload..."
     verify_deb "$2"
+    echo "Verifying the rpm payload..."
     verify_rpm "$3"
     smoke_appimage "$1"
     smoke_deb "$(realpath "$2")"
