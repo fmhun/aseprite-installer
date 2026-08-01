@@ -1436,7 +1436,7 @@ summary:focus-visible {
   .demo-camera,
   .demo-stand { display: none; }
 
-  .site-section { padding: 95px 0; }
+  .site-section { padding: 64px 0; }
   .site-section h2 { font-size: clamp(39px, 12vw, 58px); }
   .site-how,
   .site-install,
