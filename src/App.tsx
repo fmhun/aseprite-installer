@@ -324,7 +324,12 @@ function App() {
       </header>
 
       {view !== "status" && (
-        <nav className="stepper" aria-label={t("installationSteps")}>
+        <nav
+          className="stepper"
+          data-current-step={currentStepIndex}
+          data-flow-complete={flowComplete}
+          aria-label={t("installationSteps")}
+        >
           {flowSteps.map((step, index) => {
             const isComplete = flowComplete && step === "install";
             const state = isComplete

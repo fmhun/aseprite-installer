@@ -198,6 +198,8 @@ describe("Aseprite Installer contextual flow", () => {
       name: "Installation steps",
     });
     expect(stepStates(stepper)).toEqual(["current", "upcoming", "upcoming"]);
+    expect(stepper).toHaveAttribute("data-current-step", "0");
+    expect(stepper).toHaveAttribute("data-flow-complete", "false");
 
     await waitFor(() => expect(api.listReleases).toHaveBeenCalledWith(false));
     expect(await screen.findByText(/SHA-256/)).toBeInTheDocument();
@@ -209,6 +211,7 @@ describe("Aseprite Installer contextual flow", () => {
     await waitFor(() => expect(api.runPreflight).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("CMake")).toBeInTheDocument();
     expect(stepStates(stepper)).toEqual(["done", "current", "upcoming"]);
+    expect(stepper).toHaveAttribute("data-current-step", "1");
 
     fireEvent.click(screen.getByRole("button", { name: /Back/ }));
     expect(stepStates(stepper)).toEqual(["current", "upcoming", "upcoming"]);
@@ -243,6 +246,7 @@ describe("Aseprite Installer contextual flow", () => {
       }),
     );
     expect(stepStates(stepper)).toEqual(["done", "done", "current"]);
+    expect(stepper).toHaveAttribute("data-current-step", "2");
 
     fireEvent.click(await screen.findByRole("button", { name: /Back/ }));
     expect(stepStates(stepper)).toEqual(["done", "current", "upcoming"]);
@@ -357,6 +361,9 @@ describe("Aseprite Installer contextual flow", () => {
         screen.getByRole("navigation", { name: "Installation steps" }),
       ),
     ).toEqual(["done", "done", "complete"]);
+    expect(
+      screen.getByRole("navigation", { name: "Installation steps" }),
+    ).toHaveAttribute("data-flow-complete", "true");
     expect(screen.getByText(/consider buying an official copy/)).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: "Support Aseprite development ↗" }),

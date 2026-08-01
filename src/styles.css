@@ -6,6 +6,36 @@
   font-display: block;
 }
 
+@property --cable-progress {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 0%;
+}
+
+@property --cable-start {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #f4c45c;
+}
+
+@property --cable-end {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #f4c45c;
+}
+
+@property --cable-spark {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #ffffff;
+}
+
+@property --cable-active-glow {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: rgb(244 196 92 / 28%);
+}
+
 :root {
   font-family: "Pixelify Sans", Monaco, "Courier New", ui-monospace, monospace;
   color: #d7dbe3;
@@ -30,11 +60,13 @@
   --blue: #6ba8ff;
   --blue-dark: #315c99;
   --cable-idle: #252a34;
-  --cable-live: #65b8ff;
-  --cable-spark: #d8f3ff;
-  --cable-glow: rgb(101 184 255 / 45%);
+  --cable-wait: var(--accent);
+  --cable-wait-glow: rgb(244 196 92 / 28%);
+  --cable-data: #ffffff;
   --green: #70d49c;
   --green-dark: #2a7050;
+  --cable-done: var(--green);
+  --cable-done-glow: rgb(112 212 156 / 28%);
   --danger: #e36b78;
   --danger-dark: #7e2d38;
   --shadow: #090a0d;
@@ -590,36 +622,39 @@ summary:focus-visible {
 }
 
 .stepper {
+  --cable-progress: 0%;
+  --cable-start: var(--cable-wait);
+  --cable-end: var(--cable-wait);
+  --cable-spark: var(--cable-data);
+  --cable-active-glow: var(--cable-wait-glow);
+
+  position: relative;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   margin: 0 4px 10px;
   padding: 7px 0;
   isolation: isolate;
+  transition:
+    --cable-progress 200ms ease,
+    --cable-start 200ms ease,
+    --cable-end 200ms ease,
+    --cable-spark 200ms ease,
+    --cable-active-glow 200ms ease;
 }
 
-.stepper > div {
-  position: relative;
-  display: grid;
-  justify-items: center;
-  gap: 4px;
-  color: var(--faint);
-  font-size: var(--type-micro);
-  line-height: var(--leading-micro);
-  text-transform: uppercase;
-}
-
-.stepper > div:not(:last-child)::before,
-.stepper > div:not(:last-child)::after {
+.stepper::before,
+.stepper::after {
   position: absolute;
-  z-index: 0;
-  left: calc(50% + 12px);
-  width: calc(100% - 24px);
+  top: 15px;
+  left: 16.6667%;
+  height: 6px;
   content: "";
+  pointer-events: none;
 }
 
-.stepper > div:not(:last-child)::before {
-  top: 8px;
-  height: 6px;
+.stepper::before {
+  z-index: 0;
+  width: 66.6667%;
   background:
     linear-gradient(
       to bottom,
@@ -631,30 +666,66 @@ summary:focus-visible {
   box-shadow: 0 2px 0 var(--shadow);
 }
 
-.stepper > div:not(:last-child)::after {
-  top: 10px;
-  height: 2px;
-  background: repeating-linear-gradient(
-    90deg,
-    var(--cable-live) 0 6px,
-    var(--cable-spark) 6px 8px,
-    var(--cable-live) 8px 14px
-  );
+.stepper::after {
+  z-index: 1;
+  width: var(--cable-progress);
+  height: 4px;
+  margin-top: 1px;
+  opacity: 0;
+  background-image:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0 9px,
+      var(--cable-spark) 9px 12px,
+      transparent 12px 22px
+    ),
+    linear-gradient(
+      90deg,
+      var(--cable-start) 0 50%,
+      var(--cable-end) 50% 100%
+    );
+  background-position: -22px 0, 0 0;
   box-shadow:
-    0 0 4px var(--cable-live),
-    0 0 8px var(--cable-glow);
-  transform: scaleX(0);
-  transform-origin: left center;
-  transition: transform 480ms steps(8, end);
+    0 0 6px var(--cable-start),
+    0 0 12px var(--cable-active-glow);
+  transform-origin: center;
+  animation:
+    cable-data-flow 1s linear infinite,
+    cable-light-pulse 10s ease-in-out infinite,
+    cable-fade-in 200ms ease-out both;
 }
 
-.stepper > .done:not(:last-child)::after {
-  transform: scaleX(1);
-  animation: cable-charge 480ms steps(8, end);
+.stepper[data-current-step="1"] {
+  --cable-progress: 33.3333%;
+}
+
+.stepper[data-current-step="2"] {
+  --cable-progress: 66.6667%;
+  --cable-start: var(--cable-done);
+  --cable-end: var(--cable-wait);
+}
+
+.stepper[data-flow-complete="true"] {
+  --cable-start: var(--cable-done);
+  --cable-end: var(--cable-done);
+  --cable-active-glow: var(--cable-done-glow);
+}
+
+.stepper > div {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  color: var(--faint);
+  font-size: var(--type-micro);
+  line-height: var(--leading-micro);
+  text-transform: uppercase;
+  transition: color 200ms ease;
 }
 
 .stepper span {
-  z-index: 1;
+  z-index: 2;
   display: grid;
   place-items: center;
   width: 20px;
@@ -669,6 +740,10 @@ summary:focus-visible {
   font-size: var(--type-caption);
   font-weight: 600;
   line-height: var(--leading-caption);
+  transition:
+    color 200ms ease,
+    background-color 200ms ease,
+    box-shadow 200ms ease;
 }
 
 .stepper .current {
@@ -687,6 +762,7 @@ summary:focus-visible {
     inset 1px 1px 0 var(--accent-hot),
     inset -1px -1px 0 var(--accent-dark),
     2px 2px 0 var(--shadow);
+  animation: step-wait-pulse 10s ease-in-out infinite;
 }
 
 .stepper .done span {
@@ -696,6 +772,7 @@ summary:focus-visible {
     inset 1px 1px 0 #b3f0ce,
     inset -1px -1px 0 var(--green-dark),
     2px 2px 0 var(--shadow);
+  animation: step-done-pulse 10s ease-in-out infinite;
 }
 
 .stepper .complete span {
@@ -706,11 +783,38 @@ summary:focus-visible {
     inset -1px -1px 0 var(--green-dark),
     0 0 7px rgb(112 212 156 / 38%),
     2px 2px 0 var(--shadow);
+  animation: step-done-pulse 10s ease-in-out infinite;
 }
 
-@keyframes cable-charge {
-  from { background-position-x: -14px; }
-  to { background-position-x: 0; }
+@keyframes cable-data-flow {
+  from { background-position: -22px 0, 0 0; }
+  to { background-position: 0 0, 0 0; }
+}
+
+@keyframes cable-light-pulse {
+  0%, 100% {
+    filter: brightness(0.98);
+    transform: scaleY(0.96);
+  }
+  50% {
+    filter: brightness(1.06);
+    transform: scaleY(1.04);
+  }
+}
+
+@keyframes cable-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes step-wait-pulse {
+  0%, 100% { filter: drop-shadow(0 0 1px transparent); }
+  50% { filter: drop-shadow(0 0 2px var(--cable-wait-glow)); }
+}
+
+@keyframes step-done-pulse {
+  0%, 100% { filter: drop-shadow(0 0 1px transparent); }
+  50% { filter: drop-shadow(0 0 2px var(--cable-done-glow)); }
 }
 
 .flow-heading {
@@ -1495,11 +1599,10 @@ select {
     --blue: #3f79c9;
     --blue-dark: #234d86;
     --cable-idle: #777a80;
-    --cable-live: #286fc9;
-    --cable-spark: #dff2ff;
-    --cable-glow: rgb(40 111 201 / 35%);
+    --cable-wait-glow: rgb(240 185 79 / 24%);
     --green: #52b77e;
     --green-dark: #286e4a;
+    --cable-done-glow: rgb(82 183 126 / 24%);
     --danger: #cc5867;
     --danger-dark: #7e2d38;
     --shadow: #3d4650;
