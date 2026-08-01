@@ -172,7 +172,6 @@ jobs:
           sudo apt-get install --yes --no-install-recommends \
             binutils \
             build-essential \
-            cpio \
             curl \
             dbus-x11 \
             desktop-file-utils \

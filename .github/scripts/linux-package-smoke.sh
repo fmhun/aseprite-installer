@@ -220,16 +220,22 @@ verify_rpm() {
   fi
 
   local payload_root="$work_root/rpm-payload"
-  local cpio_archive="$work_root/rpm-payload.cpio"
+  local tar_archive="$work_root/rpm-payload.tar"
   mkdir "$payload_root"
-  # Keep producer and consumer statuses independent. Some rpm2cpio versions
-  # can otherwise receive SIGPIPE after cpio reaches its trailer, even though
-  # the complete archive was validly extracted.
-  if ! rpm2cpio "$rpm_path" >"$cpio_archive"; then
-    fail "rpm2cpio could not decode the rpm payload"
+  # Ubuntu 22.04's rpm2cpio depends on an archive-size tag that rpm-rs packages
+  # can omit. rpm2archive reads through librpm instead and verifies per-file
+  # digests while producing an archive for inspection without installation.
+  if ! rpm2archive --nocompression - <"$rpm_path" >"$tar_archive"; then
+    fail "rpm2archive could not decode the rpm payload"
   fi
-  [[ -s "$cpio_archive" ]] || fail "rpm2cpio produced an empty payload archive"
-  if ! (cd "$payload_root" && cpio --extract --make-directories --quiet --no-absolute-filenames <"$cpio_archive"); then
+  [[ -s "$tar_archive" ]] || fail "rpm2archive produced an empty payload archive"
+  if ! tar \
+    --extract \
+    --file "$tar_archive" \
+    --directory "$payload_root" \
+    --no-same-owner \
+    --same-permissions \
+    --delay-directory-restore; then
     fail "rpm payload extraction failed"
   fi
   assert_application_tree "$payload_root"
@@ -387,7 +393,6 @@ run_rpm_container_smoke() {
 
   dnf5 --assumeyes --setopt=install_weak_deps=False install \
     binutils \
-    cpio \
     dbus-daemon \
     desktop-file-utils \
     file \
@@ -395,11 +400,12 @@ run_rpm_container_smoke() {
     procps-ng \
     rpm \
     shadow-utils \
+    tar \
     util-linux \
     xdotool \
     xorg-x11-server-Xvfb
 
-  for command_name in cpio dbus-run-session desktop-file-validate dnf5 file find readelf realpath rpm rpm2cpio runuser setsid timeout useradd Xvfb xdotool; do
+  for command_name in dbus-run-session desktop-file-validate dnf5 file find readelf realpath rpm rpm2archive runuser setsid tar timeout useradd Xvfb xdotool; do
     require_command "$command_name"
   done
 
@@ -443,7 +449,7 @@ case "$mode" in
     [[ "${ID:-}" == ubuntu && "${VERSION_ID:-}" == 22.04 ]] || {
       fail "host package smoke requires Ubuntu 22.04, found ${ID:-unknown} ${VERSION_ID:-unknown}"
     }
-    for command_name in cpio dbus-run-session desktop-file-validate docker dpkg-deb file find git md5sum readelf realpath rpm rpm2cpio setsid sudo timeout Xvfb xdotool; do
+    for command_name in dbus-run-session desktop-file-validate docker dpkg-deb file find git md5sum readelf realpath rpm rpm2archive setsid sudo tar timeout Xvfb xdotool; do
       require_command "$command_name"
     done
     echo "Verifying the AppImage payload..."
