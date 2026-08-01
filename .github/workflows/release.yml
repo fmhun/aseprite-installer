@@ -10,16 +10,8 @@ permissions:
 
 jobs:
   release:
-    name: Release (${{ matrix.target }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - runner: macos-15
-            target: aarch64-apple-darwin
-          - runner: macos-15-intel
-            target: x86_64-apple-darwin
-    runs-on: ${{ matrix.runner }}
+    name: Release universal macOS DMG
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v6
       - uses: actions/setup-node@v6
@@ -28,20 +20,194 @@ jobs:
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
       - run: npm ci
-      - uses: tauri-apps/tauri-action@v0
+      - name: Validate release tag
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tagName: v__VERSION__
-          releaseName: Aseprite Installer v__VERSION__
-          releaseBody: |
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import { readFile } from "node:fs/promises";
+
+          const packageJson = JSON.parse(await readFile("package.json", "utf8"));
+          const tauriConfig = JSON.parse(await readFile("src-tauri/tauri.conf.json", "utf8"));
+
+          if (packageJson.version !== tauriConfig.version) {
+            throw new Error(
+              `Version mismatch: package.json=${packageJson.version}, tauri.conf.json=${tauriConfig.version}`,
+            );
+          }
+
+          const expectedTag = `v${tauriConfig.version}`;
+
+          if (process.env.RELEASE_TAG !== expectedTag) {
+            throw new Error(`Expected tag ${expectedTag}, received ${process.env.RELEASE_TAG}`);
+          }
+          NODE
+      - name: Prepare technical release
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_BODY: |
             Unofficial macOS installer that compiles Aseprite locally from verified official source releases.
 
             This release contains Aseprite Installer only. It does not contain Aseprite binaries, source code, or branding.
 
-            The macOS app is ad-hoc signed. On first launch, right-click the app and choose Open if Gatekeeper displays a warning.
-          releaseDraft: false
-          prerelease: false
-          args: --target ${{ matrix.target }}
+            The macOS app is ad-hoc signed. On first launch, Control-click the app and choose Open if Gatekeeper displays a warning.
+        run: |
+          set -euo pipefail
+
+          release_id="$(gh release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json databaseId \
+            --jq .databaseId 2>/dev/null || true)"
+
+          if [[ -z "$release_id" ]]; then
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft \
+              --verify-tag \
+              --title "Aseprite Installer ${RELEASE_TAG}" \
+              --notes "$RELEASE_BODY"
+            release_id="$(gh release view "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json databaseId \
+              --jq .databaseId)"
+          fi
+
+          if [[ ! "$release_id" =~ ^[0-9]+$ ]]; then
+            echo "Invalid release id: $release_id" >&2
+            exit 1
+          fi
+
+          is_draft="$(gh release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json isDraft \
+            --jq .isDraft)"
+          asset_count="$(gh release view "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --json assets \
+            --jq '[.assets[] | select(.name == "Aseprite-Installer-macOS-Universal.dmg")] | length')"
+
+          release_complete=false
+          if [[ "$is_draft" == "false" ]]; then
+            if [[ "$asset_count" != "1" ]]; then
+              echo "Published release is missing its stable universal DMG" >&2
+              exit 1
+            fi
+            release_complete=true
+          fi
+
+          echo "release_id=$release_id" >> "$GITHUB_OUTPUT"
+          echo "release_complete=$release_complete" >> "$GITHUB_OUTPUT"
+      - name: Build universal DMG
+        if: steps.release.outputs.release_complete != 'true'
+        id: tauri
+        uses: tauri-apps/tauri-action@v1
+        with:
+          args: --target universal-apple-darwin --bundles dmg
+      - name: Verify universal DMG
+        if: steps.release.outputs.release_complete != 'true'
+        id: verify
+        env:
+          ARTIFACT_PATHS: ${{ steps.tauri.outputs.artifactPaths }}
+        run: |
+          set -euo pipefail
+
+          dmg_path="$(node --input-type=module <<'NODE'
+          const paths = JSON.parse(process.env.ARTIFACT_PATHS ?? "[]");
+          const dmgs = paths.filter((path) => path.endsWith(".dmg"));
+
+          if (dmgs.length !== 1) {
+            throw new Error(`Expected exactly one DMG, found ${dmgs.length}: ${JSON.stringify(paths)}`);
+          }
+
+          process.stdout.write(dmgs[0]);
+          NODE
+          )"
+
+          hdiutil verify "$dmg_path"
+
+          mount_dir="$(mktemp -d)"
+          cleanup() {
+            hdiutil detach "$mount_dir" >/dev/null 2>&1 || true
+            rmdir "$mount_dir" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+
+          hdiutil attach "$dmg_path" -readonly -nobrowse -mountpoint "$mount_dir"
+
+          app_path="$mount_dir/Aseprite Installer.app"
+          if [[ ! -d "$app_path" ]]; then
+            echo "Aseprite Installer.app is missing from the DMG" >&2
+            exit 1
+          fi
+
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+
+          executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
+          executable_path="$app_path/Contents/MacOS/$executable_name"
+          if [[ ! -f "$executable_path" ]]; then
+            echo "The application executable is missing: $executable_path" >&2
+            exit 1
+          fi
+
+          architectures="$(lipo -archs "$executable_path")"
+          case "$architectures" in
+            "arm64 x86_64"|"x86_64 arm64") ;;
+            *)
+              echo "Expected arm64 and x86_64, received: $architectures" >&2
+              exit 1
+              ;;
+          esac
+          echo "dmg_path=$dmg_path" >> "$GITHUB_OUTPUT"
+      - name: Upload verified universal DMG
+        if: steps.release.outputs.release_complete != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          DMG_PATH: ${{ steps.verify.outputs.dmg_path }}
+        run: |
+          set -euo pipefail
+          stable_path="$RUNNER_TEMP/Aseprite-Installer-macOS-Universal.dmg"
+          cp "$DMG_PATH" "$stable_path"
+          gh release upload "$RELEASE_TAG" "$stable_path" \
+            --clobber \
+            --repo "$GITHUB_REPOSITORY"
+      - name: Verify stable release asset
+        if: steps.release.outputs.release_complete != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.release.outputs.release_id }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$RELEASE_ID" =~ ^[0-9]+$ ]]; then
+            echo "Invalid release id: $RELEASE_ID" >&2
+            exit 1
+          fi
+
+          asset_count="$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets" \
+            --jq '[.[] | select(.name == "Aseprite-Installer-macOS-Universal.dmg")] | length')"
+
+          if [[ "$asset_count" != "1" ]]; then
+            echo "Expected one stable universal DMG release asset, found: $asset_count" >&2
+            exit 1
+          fi
+      - name: Publish verified release as latest
+        if: steps.release.outputs.release_complete != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_ID: ${{ steps.release.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          gh api --method PATCH \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" \
+            -F draft=false \
+            -F prerelease=false \
+            -f make_latest=true \
+            --silent

@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://fmhun.github.io/aseprite-installer/sitemap.xml

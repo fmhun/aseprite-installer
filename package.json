@@ -5,10 +5,14 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:site": "vite --config vite.site.config.ts",
     "build": "tsc -b && vite build",
+    "build:site": "tsc -p site/tsconfig.json --pretty false && vite build --config vite.site.config.ts",
     "test": "vitest run",
+    "test:site": "vitest run --config vite.site.config.ts",
     "test:watch": "vitest",
     "lint": "tsc -b --pretty false",
+    "preview:site": "vite preview --config vite.site.config.ts",
     "tauri": "tauri"
   },
   "dependencies": {
