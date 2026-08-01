@@ -14,7 +14,7 @@ describe("getDemoFrame", () => {
     expect(getDemoFrame(8_200)).toMatchObject({ buildStage: "download" });
     expect(getDemoFrame(9_300)).toMatchObject({ buildStage: "verify" });
     expect(getDemoFrame(10_500)).toMatchObject({ buildStage: "compile" });
-    expect(getDemoFrame(13_200)).toMatchObject({ buildStage: "sign" });
+    expect(getDemoFrame(13_200)).toMatchObject({ buildStage: "validate" });
     expect(getDemoFrame(14_000)).toMatchObject({ buildStage: "install" });
     expect(getDemoFrame(15_000)).toMatchObject({ phase: "complete", progress: 100 });
   });

@@ -7,7 +7,7 @@ export type DemoPhase =
   | "build"
   | "complete";
 
-export type BuildStage = "download" | "verify" | "compile" | "sign" | "install";
+export type BuildStage = "download" | "verify" | "compile" | "validate" | "install";
 
 export type DemoFrame = {
   phase: DemoPhase;
@@ -55,7 +55,7 @@ export function getDemoFrame(elapsed: number, reducedMotion = false): DemoFrame 
         : progress < 76
           ? "compile"
           : progress < 89
-            ? "sign"
+            ? "validate"
             : "install";
 
   return {
