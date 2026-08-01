@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import installerIcon from "../../assets/icons/aseprite-installer.svg";
 import localBuildIcon from "../../assets/icons/aseprite-local.svg";
 import type { DemoPhase } from "./demo";
@@ -6,8 +6,22 @@ import { useDemoPlayback } from "./useDemoPlayback";
 
 const GITHUB_URL = "https://github.com/fmhun/aseprite-installer";
 const DOWNLOAD_URL = `${GITHUB_URL}/releases/latest`;
+const DOWNLOAD_ASSET_URL = `${DOWNLOAD_URL}/download`;
 const BUY_URL = "https://www.aseprite.org/buy/";
 const EULA_URL = "https://github.com/aseprite/aseprite/blob/main/EULA.txt";
+
+const downloads = {
+  macosArmDmg: `${DOWNLOAD_ASSET_URL}/Aseprite-Installer-macOS-arm64.dmg`,
+  macosIntelDmg: `${DOWNLOAD_ASSET_URL}/Aseprite-Installer-macOS-x64.dmg`,
+  macosArmArchive: `${DOWNLOAD_ASSET_URL}/Aseprite-Installer-macOS-arm64.app.zip`,
+  macosIntelArchive: `${DOWNLOAD_ASSET_URL}/Aseprite-Installer-macOS-x64.app.zip`,
+  windowsNsis: `${DOWNLOAD_ASSET_URL}/Aseprite-Installer-Windows-x64-setup.exe`,
+  windowsMsi: `${DOWNLOAD_ASSET_URL}/Aseprite-Installer-Windows-x64.msi`,
+  linuxAppImage: `${DOWNLOAD_ASSET_URL}/Aseprite-Installer-Linux-x86_64.AppImage`,
+  linuxDeb: `${DOWNLOAD_ASSET_URL}/Aseprite-Installer-Linux-x86_64.deb`,
+  linuxRpm: `${DOWNLOAD_ASSET_URL}/Aseprite-Installer-Linux-x86_64.rpm`,
+  checksums: `${DOWNLOAD_ASSET_URL}/SHA256SUMS`,
+} as const;
 
 function ExternalArrow() {
   return <span aria-hidden="true">↗</span>;
@@ -104,7 +118,7 @@ const stageCopy = {
   download: ["Downloading official source", "github.com/aseprite/aseprite"],
   verify: ["Verifying source archive", "SHA-256 digest matched"],
   compile: ["Compiling your local app", "isolated CMake + Ninja build"],
-  sign: ["Validating local artifact", "native executable checked"],
+  validate: ["Validating local artifact", "native executable checked"],
   install: ["Installing safely", "staging before replacement"],
 } as const;
 
@@ -142,7 +156,7 @@ function CompleteScreen() {
           <div className="demo-kicker">BUILD COMPLETE</div>
           <p className="demo-panel-title">Your local app is ready</p>
           <p>Aseprite · personal build</p>
-          <code>Managed application folder</code>
+          <code>Managed copy installed</code>
         </div>
         <PixelButton>Done</PixelButton>
       </div>
@@ -175,12 +189,12 @@ export function ProductDemo() {
         <div className="demo-camera" />
         <div className="demo-screen">
           <div className="demo-appbar">
-            <div className="demo-traffic"><i /><i /><i /></div>
+            <div className="demo-window-controls"><i>—</i><i>□</i><i>×</i></div>
             <div className="demo-brand">
               <img src={installerIcon} alt="" width="26" height="26" />
               <span>Aseprite Installer</span>
             </div>
-            <span className="demo-app-version">v0.1</span>
+            <span className="demo-app-version">v0.2</span>
           </div>
           <div className="demo-workspace">
             <ScreenForPhase phase={frame.phase} progress={frame.progress} buildStage={frame.buildStage} />
@@ -196,6 +210,181 @@ export function ProductDemo() {
         The installer selects an official Aseprite release, checks native build tools, verifies and compiles the source, then installs a managed personal copy on your system.
       </figcaption>
     </figure>
+  );
+}
+
+const platformIds = ["macos", "windows", "linux"] as const;
+type PlatformId = (typeof platformIds)[number];
+
+const platformLabels: Record<PlatformId, string> = {
+  macos: "macOS",
+  windows: "Windows",
+  linux: "Linux",
+};
+
+function PackageLink({
+  href,
+  label,
+  detail,
+  tone = "secondary",
+}: {
+  href: string;
+  label: string;
+  detail: string;
+  tone?: "primary" | "secondary";
+}) {
+  return (
+    <a className={`site-package-link site-package-link--${tone}`} href={href}>
+      <span><strong>{label}</strong><small>{detail}</small></span>
+      <span aria-hidden="true">↓</span>
+    </a>
+  );
+}
+
+function DownloadPicker() {
+  const [activePlatform, setActivePlatform] = useState<PlatformId>("macos");
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+
+  const activateTab = (index: number) => {
+    const platform = platformIds[index];
+    setActivePlatform(platform);
+    tabRefs.current[index]?.focus();
+  };
+
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
+    let nextIndex: number | undefined;
+
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % platformIds.length;
+    if (event.key === "ArrowLeft") nextIndex = (index - 1 + platformIds.length) % platformIds.length;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = platformIds.length - 1;
+
+    if (nextIndex !== undefined) {
+      event.preventDefault();
+      activateTab(nextIndex);
+    }
+  };
+
+  return (
+    <div className="site-download-picker">
+      <div className="site-platform-tabs" role="tablist" aria-label="Choose your operating system">
+        {platformIds.map((platform, index) => (
+          <button
+            className="site-platform-tab"
+            id={`platform-${platform}-tab`}
+            key={platform}
+            type="button"
+            role="tab"
+            aria-controls={`platform-${platform}-panel`}
+            aria-selected={activePlatform === platform}
+            tabIndex={activePlatform === platform ? 0 : -1}
+            ref={(node) => { tabRefs.current[index] = node; }}
+            onClick={() => setActivePlatform(platform)}
+            onKeyDown={(event) => handleTabKeyDown(event, index)}
+          >
+            {platformLabels[platform]}
+          </button>
+        ))}
+      </div>
+
+      <section
+        className="site-platform-panel"
+        id="platform-macos-panel"
+        role="tabpanel"
+        aria-labelledby="platform-macos-tab"
+        hidden={activePlatform !== "macos"}
+      >
+        <div className="site-platform-meta">
+          <div><h3>macOS</h3><p>macOS 15.2+ · Apple Silicon or Intel</p></div>
+          <span>AD-HOC SIGNED</span>
+        </div>
+        <p>Choose the DMG that matches your Mac. App archives are also available for manual deployment.</p>
+        <div className="site-platform-packages">
+          <PackageLink href={downloads.macosArmDmg} label="Apple Silicon DMG" detail="Recommended for M-series Macs · arm64" tone="primary" />
+          <PackageLink href={downloads.macosIntelDmg} label="Intel DMG" detail="For Intel-based Macs · x64" tone="primary" />
+          <PackageLink href={downloads.macosArmArchive} label="Apple Silicon app archive" detail="Manual deployment · arm64 .app.zip" />
+          <PackageLink href={downloads.macosIntelArchive} label="Intel app archive" detail="Manual deployment · x64 .app.zip" />
+        </div>
+        <p className="site-platform-install"><strong>Install:</strong> Download → verify → open the DMG → move the app to Applications, or run it from the DMG.</p>
+        <div className="site-platform-requirements">
+          <strong>Before you build</strong>
+          <ul>
+            <li>Xcode with the macOS SDK and command-line tools</li>
+            <li>CMake 3.20+ and Ninja 1.10+</li>
+            <li>About 6 GB of free temporary space</li>
+          </ul>
+        </div>
+        <p className="site-platform-guidance">With your approval, Aseprite Installer can set up CMake and Ninja through an existing safe Homebrew installation. It does not install Homebrew or Xcode.</p>
+        <p className="site-platform-warning"><strong>First launch:</strong> the app is ad-hoc signed, not notarized. Verify its checksum, then Control-click the app and choose <strong>Open</strong> if Gatekeeper asks.</p>
+      </section>
+
+      <section
+        className="site-platform-panel"
+        id="platform-windows-panel"
+        role="tabpanel"
+        aria-labelledby="platform-windows-tab"
+        hidden={activePlatform !== "windows"}
+      >
+        <div className="site-platform-meta">
+          <div><h3>Windows</h3><p>Windows 11 · x64</p></div>
+          <span>UNSIGNED</span>
+        </div>
+        <p>Use NSIS for a personal installation. Choose MSI only for centrally managed deployment.</p>
+        <div className="site-platform-packages">
+          <PackageLink href={downloads.windowsNsis} label="NSIS installer" detail="Recommended · current-user .exe" tone="primary" />
+          <PackageLink href={downloads.windowsMsi} label="MSI package" detail="Managed deployment · x64 .msi" />
+        </div>
+        <p className="site-platform-install"><strong>Install:</strong> Download → verify → run the current-user installer. Use MSI only for managed deployment.</p>
+        <div className="site-platform-requirements">
+          <strong>Before you build</strong>
+          <ul>
+            <li>Visual Studio 2022 with Desktop development with C++</li>
+            <li>x64 MSVC tools and Windows SDK 10.0.26100</li>
+            <li>CMake 3.20+, Ninja 1.10+, and about 6 GB free</li>
+          </ul>
+        </div>
+        <p className="site-platform-guidance">Aseprite Installer detects what is missing and guides you through the fix. It never launches Visual Studio Installer or makes system-level changes for you.</p>
+        <p className="site-platform-warning"><strong>First launch:</strong> packages are not Authenticode-signed, so SmartScreen may warn. Verify the checksum and provenance before choosing <strong>More info → Run anyway</strong>. Do not install NSIS and MSI side by side.</p>
+      </section>
+
+      <section
+        className="site-platform-panel"
+        id="platform-linux-panel"
+        role="tabpanel"
+        aria-labelledby="platform-linux-tab"
+        hidden={activePlatform !== "linux"}
+      >
+        <div className="site-platform-meta">
+          <div><h3>Linux</h3><p>x86_64 · Ubuntu 22.04 / Debian 12 baseline</p></div>
+          <span>UNSIGNED</span>
+        </div>
+        <p>AppImage is the least invasive choice. Use deb or rpm for native package-manager integration.</p>
+        <div className="site-platform-packages">
+          <PackageLink href={downloads.linuxAppImage} label="AppImage" detail="Recommended · portable x86_64" tone="primary" />
+          <PackageLink href={downloads.linuxDeb} label="deb package" detail="Debian and Ubuntu · x86_64" />
+          <PackageLink href={downloads.linuxRpm} label="rpm package" detail="Fedora and compatible systems · x86_64" />
+        </div>
+        <p className="site-platform-install"><strong>Install:</strong> Download → verify → run the AppImage, or install deb/rpm with your package manager.</p>
+        <div className="site-platform-requirements">
+          <strong>Before you build</strong>
+          <ul>
+            <li>Clang and Clang++ 12+, CMake 3.20+, and Ninja 1.10+</li>
+            <li>X11, Xcursor, XInput, XRandR, OpenGL, and fontconfig development libraries</li>
+            <li>WebKitGTK 4.1 runtime dependencies and about 6 GB free</li>
+          </ul>
+        </div>
+        <p className="site-platform-guidance">Aseprite Installer provides the right apt, dnf, pacman, or zypper command for recognized distributions. It never runs <code>sudo</code> or <code>pkexec</code>.</p>
+        <p className="site-platform-warning"><strong>First launch:</strong> packages are unsigned. Verify the checksum and provenance; an AppImage may also need <code>chmod +x</code> before it opens.</p>
+      </section>
+
+      <div className="site-download-footer">
+        <p><strong>Aseprite Installer checks every requirement and gives you the right fix for your system.</strong> System-level changes always remain under your control.</p>
+        <div>
+          <a href={downloads.checksums}>SHA256SUMS <span aria-hidden="true">↓</span></a>
+          <a href={DOWNLOAD_URL}>All release assets <ExternalArrow /></a>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -215,7 +404,7 @@ function App() {
           <a href="#faq">FAQ</a>
           <a href={GITHUB_URL}>GitHub <ExternalArrow /></a>
         </nav>
-        <a className="site-button site-button--small" href={DOWNLOAD_URL}>Downloads</a>
+        <a className="site-button site-button--small" href="#install">Download</a>
       </header>
 
       <main id="main" tabIndex={-1}>
@@ -224,16 +413,16 @@ function App() {
             <h1>Install <em>Aseprite</em><br />from source.</h1>
             <p className="site-eyebrow site-hero-tag"><span /> AND FOR FREE</p>
             <p className="site-lead">
-              Aseprite Installer is a free, MIT-licensed desktop utility that checks the required build tools, verifies an official source release, and compiles your personal copy locally on macOS, Windows, or Linux. Nothing is replaced until the result is ready.
+              Aseprite Installer verifies official source, checks your build tools, and compiles a personal copy locally on macOS, Windows, or Linux. The installer is free and MIT-licensed; Aseprite’s EULA still applies.
             </p>
             <div className="site-hero-actions">
-              <a className="site-button" href={DOWNLOAD_URL}>Choose your installer <span aria-hidden="true">↓</span></a>
+              <a className="site-button" href="#install">Choose your platform <span aria-hidden="true">↓</span></a>
               <a className="site-text-link" href={GITHUB_URL}>View source on GitHub <ExternalArrow /></a>
             </div>
             <p className="site-compatibility">
               <span>macOS · Apple Silicon + Intel</span><i />
               <span>Windows 11 · x64</span><i />
-              <span>Linux · x86_64</span>
+              <span>Linux x86_64</span>
             </p>
           </div>
 
@@ -249,53 +438,10 @@ function App() {
         <section className="site-section site-install" id="install">
           <div className="site-install-copy">
             <p className="site-eyebrow"><span /> INSTALL</p>
-            <h2>Pick your package.<br />Build local.</h2>
-            <ol className="site-install-steps">
-              <li><span>1</span><div><strong>Open the latest release</strong><small>GitHub lists every supported installer package together in one release.</small></div></li>
-              <li><span>2</span><div><strong>Match your system</strong><small>Choose the architecture and native package format shown for your platform.</small></div></li>
-              <li><span>3</span><div><strong>Run the installer</strong><small>Follow your operating system’s normal package flow, then start a verified local build.</small></div></li>
-            </ol>
-            <a className="site-button" href={DOWNLOAD_URL}>View latest release <span aria-hidden="true">↓</span></a>
+            <h2>Choose your platform. Build locally.</h2>
+            <p>Select the installer made for your system. Every package comes from the same verified release and builds Aseprite only on your device.</p>
           </div>
-
-          <div className="site-package-board" aria-label="Available installer packages by platform">
-            <div className="site-package-titlebar">
-              <span><i /><i /><i /></span>
-              <strong>Desktop packages</strong>
-              <small>▦</small>
-            </div>
-            <div className="site-package-grid">
-              <div className="site-package-card">
-                <span className="site-package-status">AVAILABLE</span>
-                <strong>macOS</strong>
-                <small>Apple Silicon + Intel</small>
-                <code>arm64 DMG · x64 DMG</code>
-              </div>
-              <div className="site-package-card">
-                <span className="site-package-status">AVAILABLE</span>
-                <strong>Windows 11</strong>
-                <small>x64</small>
-                <code>NSIS .exe · MSI</code>
-              </div>
-              <div className="site-package-card">
-                <span className="site-package-status">AVAILABLE</span>
-                <strong>Linux</strong>
-                <small>x86_64</small>
-                <code>AppImage · .deb · .rpm</code>
-              </div>
-            </div>
-            <div className="site-package-note">macOS ad-hoc signed · Windows/Linux unsigned · checksums + attestations</div>
-          </div>
-
-          <div className="site-requirements">
-            <p className="site-requirements-note"><strong>Aseprite Installer checks your setup for you</strong> — use the built-in platform guides to resolve anything missing, then check again.</p>
-            <span>Native C++ toolchain</span><span>Platform SDK</span><span>CMake</span><span>Ninja</span><span>~6 GB free</span>
-          </div>
-          <div className="site-platforms" aria-label="Platform availability">
-            <span><i className="site-dot site-dot--available" /> macOS <small>available</small></span>
-            <span><i className="site-dot site-dot--available" /> Windows <small>available</small></span>
-            <span><i className="site-dot site-dot--available" /> Linux <small>available</small></span>
-          </div>
+          <DownloadPicker />
         </section>
 
         <section className="site-section site-how" id="how-it-works">
@@ -310,11 +456,11 @@ function App() {
             </li>
             <li>
               <div className="site-process-number">02</div>
-              <div><h3>Get ready to build</h3><p>Check the native compiler and SDK, CMake, Ninja, disk space, and personal-use terms for your platform.</p></div>
+              <div><h3>Prepare your system</h3><p>Check the native toolchain and follow the built-in platform guide for anything missing. System changes remain under your control.</p></div>
             </li>
             <li>
               <div className="site-process-number">03</div>
-              <div><h3>Build safely</h3><p>Verify, compile, validate, and stage the app before replacing a managed installation.</p></div>
+              <div><h3>Build locally</h3><p>Verify official Aseprite and Skia assets, compile on your device, and stage the result before replacing a managed copy.</p></div>
             </li>
           </ol>
         </section>
@@ -340,16 +486,16 @@ function App() {
           </div>
           <div className="site-faq-list">
             <details>
-              <summary>Does the installer distribute Aseprite?<span aria-hidden="true">+</span></summary>
-              <p>No. It downloads an official source archive only after you choose a release, verifies its GitHub-provided SHA-256 digest, and compiles your personal copy locally.</p>
+              <summary>Which installer should I choose?<span aria-hidden="true">+</span></summary>
+              <p>On macOS, choose the DMG for your Mac’s architecture. On Windows, use the NSIS .exe for a personal installation or MSI for managed deployment. On Linux, AppImage is the least invasive choice; deb and rpm integrate with their matching package managers.</p>
             </details>
             <details>
-              <summary>Why might my operating system show a warning?<span aria-hidden="true">+</span></summary>
-              <p>macOS packages are ad-hoc signed, while Windows and Linux packages are currently unsigned. Verify the published SHA-256 checksum and GitHub attestation, then follow the platform guidance in the README.</p>
+              <summary>Does the installer distribute Aseprite?<span aria-hidden="true">+</span></summary>
+              <p>No. It downloads official Aseprite source and Skia release assets only after you choose a release, verifies their pinned sizes and SHA-256 digests, and compiles your personal copy locally. Aseprite’s EULA still applies.</p>
             </details>
             <details>
               <summary>What happens to an existing copy?<span aria-hidden="true">+</span></summary>
-              <p>The new app is staged and checked before replacement. Managed builds can keep a backup; Steam and package-manager copies remain read-only.</p>
+              <p>The new app is staged and validated before replacement. Installer-managed builds can keep a backup; Steam and package-manager copies remain read-only.</p>
             </details>
           </div>
         </section>
