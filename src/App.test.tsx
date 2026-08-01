@@ -5,6 +5,9 @@ import { api } from "./api";
 
 vi.mock("./api", () => ({
   api: {
+    getPlatformInfo: vi.fn(),
+    getRecoveryStatus: vi.fn(),
+    retryRecovery: vi.fn(),
     listReleases: vi.fn(),
     scanInstallations: vi.fn(),
     runPreflight: vi.fn(),
@@ -64,6 +67,42 @@ const preflight = {
       remediation: null,
     },
   ],
+};
+
+const macosPlatform = {
+  id: "macos" as const,
+  displayName: "macOS",
+  architecture: "arm64",
+  supported: true,
+  unsupportedReason: null,
+  defaultTargetPath: "/Users/test/Applications/Aseprite.app",
+  fileManagerName: "Finder",
+  trashName: "Trash",
+  shellName: "Terminal",
+};
+
+const windowsPlatform = {
+  id: "windows" as const,
+  displayName: "Windows",
+  architecture: "x86_64",
+  supported: true,
+  unsupportedReason: null,
+  defaultTargetPath: "C:\\Users\\test\\AppData\\Local\\Aseprite\\Aseprite",
+  fileManagerName: "File Explorer",
+  trashName: "Recycle Bin",
+  shellName: "PowerShell",
+};
+
+const linuxPlatform = {
+  id: "linux" as const,
+  displayName: "Linux",
+  architecture: "x86_64",
+  supported: true,
+  unsupportedReason: null,
+  defaultTargetPath: "/home/test/.local/share/aseprite-installer/Aseprite",
+  fileManagerName: "Files",
+  trashName: "Trash",
+  shellName: "Terminal",
 };
 
 const missingPreflight = {
@@ -148,6 +187,13 @@ describe("Aseprite Installer contextual flow", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(api.getPlatformInfo).mockResolvedValue(macosPlatform);
+    vi.mocked(api.getRecoveryStatus).mockResolvedValue({
+      blocked: false,
+      message: null,
+      detail: null,
+      journalPath: null,
+    });
     vi.mocked(api.listReleases).mockResolvedValue([release]);
     vi.mocked(api.scanInstallations).mockResolvedValue([]);
     vi.mocked(api.runPreflight).mockResolvedValue(preflight);
@@ -187,6 +233,87 @@ describe("Aseprite Installer contextual flow", () => {
     expect(api.openExternal).toHaveBeenNthCalledWith(3, "https://github.com/aseprite/aseprite");
     expect(api.openExternal).toHaveBeenNthCalledWith(4, "https://github.com/fmhun/aseprite-installer");
     expect(api.openExternal).toHaveBeenNthCalledWith(5, "https://github.com/fmhun/aseprite-installer/issues/new/choose");
+  });
+
+  it("keeps the app open in read-only mode and retries interrupted recovery", async () => {
+    vi.mocked(api.scanInstallations).mockResolvedValue([managedInstallation]);
+    vi.mocked(api.getRecoveryStatus).mockResolvedValue({
+      blocked: true,
+      message: "The verified cleanup is temporarily locked.",
+      detail: "Close Aseprite and retry.",
+      journalPath: "C:\\Users\\test\\portable-transaction.json",
+    });
+    vi.mocked(api.retryRecovery).mockResolvedValue({
+      blocked: false,
+      message: null,
+      detail: null,
+      journalPath: null,
+    });
+
+    render(<App />);
+
+    const alert = await screen.findByRole("alert", {
+      name: /interrupted installation needs attention/i,
+    });
+    expect(within(alert).getByText(/portable-transaction\.json/)).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /open aseprite/i }),
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: /reinstall or change version/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /show in finder/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /restore previous/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^uninstall$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /clean cache/i })).toBeDisabled();
+
+    fireEvent.click(
+      within(alert).getByRole("button", { name: /retry safe recovery/i }),
+    );
+
+    await waitFor(() => expect(api.retryRecovery).toHaveBeenCalledTimes(1));
+    expect(
+      await screen.findByText(/interrupted installation was recovered safely/i),
+    ).toBeInTheDocument();
+  });
+
+  it("enters recovery-safe mode when a launch discovers a new pending journal", async () => {
+    const blockedRecovery = {
+      blocked: true,
+      message: "An interrupted installation must be recovered.",
+      detail: "The verified transaction journal is still present.",
+      journalPath: "/Users/test/Library/Application Support/portable-transaction.json",
+    };
+    vi.mocked(api.scanInstallations).mockResolvedValue([managedInstallation]);
+    vi.mocked(api.getRecoveryStatus)
+      .mockResolvedValueOnce({
+        blocked: false,
+        message: null,
+        detail: null,
+        journalPath: null,
+      })
+      .mockResolvedValue(blockedRecovery);
+    vi.mocked(api.launchInstallation).mockRejectedValue({
+      code: "recoveryBlocked",
+      message: "Recover the interrupted installation before launching Aseprite.",
+      detail: blockedRecovery.journalPath,
+    });
+
+    render(<App />);
+    fireEvent.click(
+      await screen.findByRole("button", { name: /open aseprite/i }),
+    );
+
+    expect(
+      await screen.findByRole("alert", {
+        name: /interrupted installation needs attention/i,
+      }),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/recover the interrupted installation before launching/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open aseprite/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /reinstall or change version/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /show in finder/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /restore previous/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /^uninstall$/i })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /clean cache/i })).toBeDisabled();
   });
 
   it("shows a minimal installed state before entering the reinstall flow", async () => {
@@ -481,6 +608,81 @@ describe("Aseprite Installer contextual flow", () => {
     });
     expect(logHeading.closest("section")).toHaveClass("logs");
     expect(document.querySelector("details.logs")).not.toBeInTheDocument();
+  });
+
+  it("uses Windows locations, File Explorer, and Recycle Bin terminology", async () => {
+    vi.mocked(api.getPlatformInfo).mockResolvedValue(windowsPlatform);
+    vi.mocked(api.scanInstallations).mockResolvedValue([managedInstallation]);
+    vi.mocked(api.uninstallManaged).mockResolvedValue();
+    render(<App />);
+
+    fireEvent.click(await screen.findByText("More options"));
+    expect(
+      screen.getByRole("button", { name: "Show in File Explorer" }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Uninstall" }));
+    const dialog = screen.getByRole("dialog", { name: "Uninstall Aseprite?" });
+    expect(within(dialog).getByText(/moved to the Recycle Bin/)).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Uninstall" }));
+    expect(
+      await screen.findByText("The managed application was moved to the Recycle Bin."),
+    ).toBeInTheDocument();
+  });
+
+  it("shows Linux's default target and distribution-specific manual guidance", async () => {
+    vi.mocked(api.getPlatformInfo).mockResolvedValue(linuxPlatform);
+    vi.mocked(api.runPreflight).mockResolvedValue({
+      ...missingPreflight,
+      homebrewAvailable: false,
+      prerequisites: [
+        {
+          ...missingPreflight.prerequisites[0],
+          remediation: "Install CMake with your distribution package manager.",
+        },
+      ],
+    });
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Compile a personal copy/ }),
+    );
+    expect(
+      await screen.findByText(
+        `Default location on Linux: ${linuxPlatform.defaultTargetPath}`,
+      ),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Check requirements/ }));
+    expect(
+      screen.queryByRole("button", { name: /Homebrew/ }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "How to resolve" }));
+    const dialog = screen.getByRole("dialog", {
+      name: "Install the Linux build requirements",
+    });
+    expect(within(dialog).getByText("Debian or Ubuntu")).toBeInTheDocument();
+    expect(within(dialog).getByText("Fedora or RHEL family")).toBeInTheDocument();
+    expect(within(dialog).getByText("Arch Linux")).toBeInTheDocument();
+    expect(within(dialog).getByText("openSUSE")).toBeInTheDocument();
+    expect(within(dialog).getByText(/never elevates automatically/)).toBeInTheDocument();
+  });
+
+  it("uses the backend canCancel flag during protected transaction stages", async () => {
+    vi.mocked(api.startInstall).mockImplementation((_request, onProgress) => {
+      onProgress({
+        stage: "integrating",
+        percent: 92,
+        message: "Integrating the desktop application…",
+        logLine: null,
+        canCancel: false,
+      });
+      return new Promise(() => {});
+    });
+    render(<App />);
+
+    fireEvent.click(await reachInstallConfirmation());
+
+    expect(await screen.findByText(/Finishing a protected installation step/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Cancel" })).not.toBeInTheDocument();
   });
 
   it("restores a backup through an explicit in-app confirmation", async () => {

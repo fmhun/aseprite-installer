@@ -3,7 +3,9 @@ import type {
   InstallationInfo,
   InstallRequest,
   OperationProgress,
+  PlatformInfo,
   PreflightReport,
+  RecoveryStatus,
   ReleaseInfo,
 } from "./types";
 
@@ -14,6 +16,9 @@ export interface PreflightRequest {
 }
 
 export const api = {
+  getPlatformInfo: () => invoke<PlatformInfo>("get_platform_info"),
+  getRecoveryStatus: () => invoke<RecoveryStatus>("get_recovery_status"),
+  retryRecovery: () => invoke<RecoveryStatus>("retry_recovery"),
   listReleases: (includePrereleases: boolean) =>
     invoke<ReleaseInfo[]>("list_releases", { includePrereleases }),
   scanInstallations: () =>

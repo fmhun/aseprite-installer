@@ -6,8 +6,10 @@ import type {
   InstallRequest,
   InstallerError,
   OperationProgress,
+  PlatformInfo,
   PreflightReport,
   Prerequisite,
+  RecoveryStatus,
   ReleaseInfo,
 } from "./types";
 import { AppFooter } from "./components/AppFooter";
@@ -34,6 +36,26 @@ const initialProgress: OperationProgress = {
   percent: null,
   message: "",
   logLine: null,
+  canCancel: false,
+};
+
+const fallbackPlatform: PlatformInfo = {
+  id: "macos",
+  displayName: "macOS",
+  architecture: "unknown",
+  supported: true,
+  unsupportedReason: null,
+  defaultTargetPath: "~/Applications/Aseprite.app",
+  fileManagerName: "Finder",
+  trashName: "Trash",
+  shellName: "Terminal",
+};
+
+const readyRecovery: RecoveryStatus = {
+  blocked: false,
+  message: null,
+  detail: null,
+  journalPath: null,
 };
 
 function formatBytes(bytes: number): string {
@@ -60,6 +82,15 @@ function errorMessage(error: unknown): string {
   return String(error);
 }
 
+function hasInstallerErrorCode(error: unknown, code: string): boolean {
+  return Boolean(
+    error &&
+      typeof error === "object" &&
+      "code" in error &&
+      (error as InstallerError).code === code,
+  );
+}
+
 function installationPriority(installation: InstallationInfo): number {
   return { managed: 0, manual: 1, steam: 2, packageManager: 3 }[
     installation.channel
@@ -76,6 +107,11 @@ function App() {
   const t = useMemo(() => createTranslator(getLocale()), []);
   const [view, setView] = useState<View>("status");
   const [installations, setInstallations] = useState<InstallationInfo[]>([]);
+  const [platform, setPlatform] = useState<PlatformInfo>(fallbackPlatform);
+  const [platformLoading, setPlatformLoading] = useState(true);
+  const [recovery, setRecovery] = useState<RecoveryStatus>(readyRecovery);
+  const [recoveryLoading, setRecoveryLoading] = useState(true);
+  const [retryingRecovery, setRetryingRecovery] = useState(false);
   const [releases, setReleases] = useState<ReleaseInfo[]>([]);
   const [preflight, setPreflight] = useState<PreflightReport | null>(null);
   const [flowTarget, setFlowTarget] = useState<InstallationInfo | null>(null);
@@ -98,6 +134,26 @@ function App() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [helpPrerequisite, setHelpPrerequisite] = useState<Prerequisite | null>(null);
 
+  const handleOperationError = useCallback(
+    async (
+      caught: unknown,
+      reportError: (message: string) => void = (message) => setError(message),
+    ): Promise<string> => {
+      const message = errorMessage(caught);
+      reportError(message);
+      if (hasInstallerErrorCode(caught, "recoveryBlocked")) {
+        try {
+          setRecovery(await api.getRecoveryStatus());
+        } catch {
+          // Keep the operation error visible. The backend continues enforcing
+          // recovery-safe mode even if this status refresh cannot be rendered.
+        }
+      }
+      return message;
+    },
+    [],
+  );
+
   const refreshInstallations = useCallback(async (showSpinner = true) => {
     if (showSpinner) setLoading(true);
     setError(null);
@@ -107,15 +163,82 @@ function App() {
         await (showSpinner ? withMinimumDuration(scan) : scan),
       );
     } catch (caught) {
-      setError(errorMessage(caught));
+      if (hasInstallerErrorCode(caught, "recoveryBlocked")) {
+        await handleOperationError(caught, () => undefined);
+      } else {
+        setError(errorMessage(caught));
+      }
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [handleOperationError]);
 
   useEffect(() => {
     void refreshInstallations();
   }, [refreshInstallations]);
+
+  useEffect(() => {
+    let active = true;
+    void api
+      .getPlatformInfo()
+      .then((info) => {
+        if (active) setPlatform(info);
+      })
+      .catch((caught) => {
+        if (active) setError(errorMessage(caught));
+      })
+      .finally(() => {
+        if (active) setPlatformLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void api
+      .getRecoveryStatus()
+      .then((status) => {
+        if (active) setRecovery(status);
+      })
+      .catch((caught) => {
+        if (active) setError(errorMessage(caught));
+      })
+      .finally(() => {
+        if (active) setRecoveryLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  const retryRecovery = async () => {
+    setRetryingRecovery(true);
+    setError(null);
+    try {
+      const status = await api.retryRecovery();
+      setRecovery(status);
+      if (!status.blocked) {
+        setNotice(t("recoveryComplete"));
+        await refreshInstallations(false);
+      }
+    } catch (caught) {
+      await handleOperationError(caught);
+      await refreshRecoveryStatus();
+    } finally {
+      setRetryingRecovery(false);
+    }
+  };
+
+  const refreshRecoveryStatus = async () => {
+    try {
+      setRecovery(await api.getRecoveryStatus());
+    } catch {
+      // Preserve the operation error; startup recovery status remains available
+      // through the backend on the next explicit retry or app launch.
+    }
+  };
 
   const loadReleases = useCallback(async () => {
     setReleaseLoading(true);
@@ -180,6 +303,7 @@ function App() {
   });
 
   const startFlow = (target: InstallationInfo | null) => {
+    if (recovery.blocked) return;
     setFlowTarget(target);
     setCompletedInstallation(null);
     setPreflight(null);
@@ -190,6 +314,7 @@ function App() {
   };
 
   const openPreflight = async () => {
+    if (recovery.blocked) return;
     setView("preflight");
     setPreflightLoading(true);
     setError(null);
@@ -198,13 +323,14 @@ function App() {
         await withMinimumDuration(api.runPreflight(currentPreflightRequest())),
       );
     } catch (caught) {
-      setError(errorMessage(caught));
+      await handleOperationError(caught);
     } finally {
       setPreflightLoading(false);
     }
   };
 
   const confirmPreflight = async () => {
+    if (recovery.blocked) return;
     setPreflightLoading(true);
     setError(null);
     try {
@@ -216,14 +342,14 @@ function App() {
       setEulaAccepted(false);
       setShowEula(true);
     } catch (caught) {
-      setError(errorMessage(caught));
+      await handleOperationError(caught);
     } finally {
       setPreflightLoading(false);
     }
   };
 
   const startInstall = async () => {
-    if (!selectedRelease || !eulaAccepted) return;
+    if (recovery.blocked || !selectedRelease || !eulaAccepted) return;
     const request: InstallRequest = {
       tag: selectedRelease.tag,
       targetPath:
@@ -242,8 +368,9 @@ function App() {
     setProgress({
       stage: "preflight",
       percent: 0,
-      message: t("checking"),
+      message: t("checking", { platform: platform.displayName }),
       logLine: null,
+      canCancel: true,
     });
     try {
       const installed = await api.startInstall(request, (event) => {
@@ -258,18 +385,22 @@ function App() {
         stage: "completed",
         percent: 100,
         message: t("installComplete"),
+        canCancel: false,
       }));
+      await refreshRecoveryStatus();
       await refreshInstallations(false);
     } catch (caught) {
-      const message = errorMessage(caught);
+      const message = await handleOperationError(caught, () => undefined);
       setProgress((current) => ({
         ...current,
         stage: "failed",
         percent: current.percent === null ? 0 : Math.min(100, Math.max(0, current.percent)),
         message,
         logLine: null,
+        canCancel: false,
       }));
       setLogs((current) => [...current.slice(-499), `ERROR: ${message}`]);
+      await refreshRecoveryStatus();
     } finally {
       setBusy(false);
     }
@@ -285,7 +416,8 @@ function App() {
         ),
       );
     } catch (caught) {
-      setError(errorMessage(caught));
+      await handleOperationError(caught);
+      await refreshRecoveryStatus();
     } finally {
       setInstallingTools(false);
     }
@@ -295,12 +427,12 @@ function App() {
     try {
       await api.cancelOperation();
     } catch (caught) {
-      setError(errorMessage(caught));
+      await handleOperationError(caught);
     }
   };
 
   const confirmManagedAction = async () => {
-    if (!pendingAction) return;
+    if (recovery.blocked || !pendingAction) return;
     const { kind, installation } = pendingAction;
     setBusy(true);
     setError(null);
@@ -312,24 +444,46 @@ function App() {
         setNotice(t("restoreComplete"));
       } else {
         await api.uninstallManaged(installation.id);
-        setNotice(t("uninstallComplete"));
+        setNotice(t("uninstallComplete", { trash: platform.trashName }));
       }
+      await refreshRecoveryStatus();
       await refreshInstallations(false);
       setPendingAction(null);
     } catch (caught) {
-      setActionError(errorMessage(caught));
+      await handleOperationError(caught, (message) => setActionError(message));
+      await refreshRecoveryStatus();
     } finally {
       setBusy(false);
     }
   };
 
   const cleanCache = async () => {
+    if (recovery.blocked) return;
     setError(null);
     try {
       const size = await api.cleanCache();
       setNotice(t("cacheCleaned", { size: formatBytes(size) }));
     } catch (caught) {
-      setError(errorMessage(caught));
+      await handleOperationError(caught);
+      await refreshRecoveryStatus();
+    }
+  };
+
+  const launchInstallation = async (id: string) => {
+    setError(null);
+    try {
+      await api.launchInstallation(id);
+    } catch (caught) {
+      await handleOperationError(caught);
+    }
+  };
+
+  const revealInstallation = async (id: string) => {
+    setError(null);
+    try {
+      await api.revealInstallation(id);
+    } catch (caught) {
+      await handleOperationError(caught);
     }
   };
 
@@ -342,7 +496,7 @@ function App() {
     setError(null);
   };
 
-  if (loading) {
+  if (loading || platformLoading || recoveryLoading) {
     return (
       <main className="app-shell loading-layout">
         <LoadingIndicator label={t("checkingInstallation")} screen />
@@ -399,10 +553,40 @@ function App() {
           <button aria-label={t("close")} onClick={() => setError(null)}>×</button>
         </div>
       )}
+      {recovery.blocked && (
+        <div
+          className="alert error recovery-alert"
+          role="alert"
+          aria-labelledby="recovery-blocked-title"
+        >
+          <strong id="recovery-blocked-title">{t("recoveryBlockedTitle")}</strong>
+          <span>{t("recoveryBlockedBody")}</span>
+          {recovery.message && <span>{recovery.message}</span>}
+          {recovery.detail && <small>{recovery.detail}</small>}
+          {recovery.journalPath && (
+            <small className="path">
+              {t("recoveryJournal", { path: recovery.journalPath })}
+            </small>
+          )}
+          <button
+            className="button secondary compact"
+            disabled={retryingRecovery}
+            onClick={() => void retryRecovery()}
+          >
+            {t(retryingRecovery ? "retryingRecovery" : "retryRecovery")}
+          </button>
+        </div>
+      )}
       {notice && (
         <div className="alert success" role="status">
           <span>{notice}</span>
           <button aria-label={t("close")} onClick={() => setNotice(null)}>×</button>
+        </div>
+      )}
+      {!platform.supported && (
+        <div className="alert error" role="alert">
+          <strong>{t("unsupportedPlatform", { platform: platform.displayName })}</strong>
+          <span>{platform.unsupportedReason ?? t("unsupportedPlatformFallback")}</span>
         </div>
       )}
 
@@ -422,10 +606,10 @@ function App() {
                   <p className="context-note">{t("manualStatusHint")}</p>
                 )}
                 {primaryInstallation.channel === "manual" && !primaryInstallation.manageable && (
-                  <p className="context-note">{t("manualReadOnlyHint")}</p>
+                  <p className="context-note">{t("manualReadOnlyHint", { path: platform.defaultTargetPath })}</p>
                 )}
                 {primaryInstallation.channel === "managed" && !primaryInstallation.manageable && (
-                  <p className="context-note">{t("managedReadOnlyHint")}</p>
+                  <p className="context-note">{t("managedReadOnlyHint", { path: platform.defaultTargetPath })}</p>
                 )}
                 {(primaryInstallation.channel === "steam" ||
                   primaryInstallation.channel === "packageManager") && (
@@ -451,20 +635,21 @@ function App() {
               <div className="primary-actions">
                 <button
                   className="button primary full"
-                  onClick={() => void api.launchInstallation(primaryInstallation.id)}
+                  disabled={recovery.blocked}
+                  onClick={() => void launchInstallation(primaryInstallation.id)}
                 >
                   ▶ {t("openAseprite")}
                 </button>
                 {(primaryInstallation.channel === "managed" || primaryInstallation.channel === "manual") && primaryInstallation.manageable ? (
                   <button
                     className="button secondary full"
-                    disabled={busy}
+                    disabled={busy || !platform.supported || recovery.blocked}
                     onClick={() => startFlow(primaryInstallation)}
                   >
                     {primaryInstallation.channel === "manual" ? t("manageInstallation") : t("changeVersion")}
                   </button>
                 ) : (
-                  <button className="button secondary full" onClick={() => startFlow(null)}>
+                  <button className="button secondary full" disabled={!platform.supported || recovery.blocked} onClick={() => startFlow(null)}>
                     {t("installSeparateCopy")}
                   </button>
                 )}
@@ -472,20 +657,20 @@ function App() {
               <details className="more-options">
                 <summary>{t("moreOptions")}</summary>
                 <div>
-                  <button className="button ghost compact" onClick={() => void api.revealInstallation(primaryInstallation.id)}>
-                    {t("reveal")}
+                  <button className="button ghost compact" disabled={recovery.blocked} onClick={() => void revealInstallation(primaryInstallation.id)}>
+                    {t("reveal", { fileManager: platform.fileManagerName })}
                   </button>
                   {primaryInstallation.channel === "managed" && primaryInstallation.manageable && primaryInstallation.hasBackup && (
-                    <button className="button ghost compact" disabled={busy} onClick={() => { setActionError(null); setPendingAction({ kind: "restore", installation: primaryInstallation }); }}>
+                    <button className="button ghost compact" disabled={busy || recovery.blocked} onClick={() => { setActionError(null); setPendingAction({ kind: "restore", installation: primaryInstallation }); }}>
                       {t("restore")}
                     </button>
                   )}
                   {primaryInstallation.channel === "managed" && primaryInstallation.manageable && (
-                    <button className="button danger ghost compact" disabled={busy} onClick={() => { setActionError(null); setPendingAction({ kind: "uninstall", installation: primaryInstallation }); }}>
+                    <button className="button danger ghost compact" disabled={busy || recovery.blocked} onClick={() => { setActionError(null); setPendingAction({ kind: "uninstall", installation: primaryInstallation }); }}>
                       {t("uninstall")}
                     </button>
                   )}
-                  <button className="button ghost compact" onClick={() => void cleanCache()}>{t("cleanCache")}</button>
+                  <button className="button ghost compact" disabled={recovery.blocked} onClick={() => void cleanCache()}>{t("cleanCache")}</button>
                 </div>
               </details>
               {hasMultipleInstallations && (
@@ -494,7 +679,7 @@ function App() {
                   {otherInstallations.map((installation) => (
                     <div className="other-installation" key={installation.id}>
                       <span>{t(installation.channel)} · Aseprite {installation.version?.replace(/^v/, "") ?? "?"}</span>
-                      <button onClick={() => void api.launchInstallation(installation.id)}>{t("open")}</button>
+                      <button disabled={recovery.blocked} onClick={() => void launchInstallation(installation.id)}>{t("open")}</button>
                     </div>
                   ))}
                 </details>
@@ -522,14 +707,14 @@ function App() {
               </section>
               <div className="choice-divider"><span>{t("orCompile")}</span></div>
               <div className="primary-actions">
-                <button className="button secondary full" onClick={() => startFlow(null)}>
+                <button className="button secondary full" disabled={!platform.supported || recovery.blocked} onClick={() => startFlow(null)}>
                   {t("compilePersonalCopy")} →
                 </button>
               </div>
               <details className="more-options">
                 <summary>{t("moreOptions")}</summary>
                 <div>
-                  <button className="button ghost compact" onClick={() => void cleanCache()}>{t("cleanCache")}</button>
+                  <button className="button ghost compact" disabled={recovery.blocked} onClick={() => void cleanCache()}>{t("cleanCache")}</button>
                 </div>
               </details>
             </>
@@ -544,6 +729,12 @@ function App() {
             <span className="step-label">{t("stepOf", { current: "1", total: "3" })}</span>
             <h2>{t("chooseVersionTitle")}</h2>
             <p>{t("chooseVersionBody")}</p>
+            <p className="context-note" title={flowTarget?.path ?? platform.defaultTargetPath}>
+              {t(flowTarget ? "selectedInstallTarget" : "defaultInstallTarget", {
+                platform: platform.displayName,
+                path: flowTarget?.path ?? platform.defaultTargetPath,
+              })}
+            </p>
           </div>
           {releaseLoading ? (
             <LoadingIndicator label={t("loadingReleases")} />
@@ -573,7 +764,7 @@ function App() {
                 <input type="checkbox" checked={includePrereleases} onChange={(event) => setIncludePrereleases(event.target.checked)} />
                 <span>{t("includePrereleases")}</span>
               </label>
-              <button className="button primary full next-button" disabled={!selectedRelease || releaseLoading} onClick={() => void openPreflight()}>
+              <button className="button primary full next-button" disabled={!selectedRelease || releaseLoading || recovery.blocked} onClick={() => void openPreflight()}>
                 {t("continueToChecks")} →
               </button>
             </>
@@ -616,7 +807,7 @@ function App() {
                   </li>
                 ))}
               </ul>
-              {preflight.homebrewAvailable && preflight.prerequisites.some((item) => !item.ok && (item.id === "cmake" || item.id === "ninja")) && (
+              {platform.id === "macos" && preflight.homebrewAvailable && preflight.prerequisites.some((item) => !item.ok && (item.id === "cmake" || item.id === "ninja")) && (
                 <button
                   className="button secondary full"
                   onClick={() => void (installingTools ? cancelToolInstallation() : installTools())}
@@ -625,9 +816,9 @@ function App() {
                 </button>
               )}
               {!preflight.ready && <p className="blocking-note">{t("fixRequirements")}</p>}
-              <button
-                className="button primary full next-button"
-                disabled={installingTools}
+                <button
+                  className="button primary full next-button"
+                  disabled={installingTools || recovery.blocked}
                 onClick={() => void confirmPreflight()}
               >
                 {preflight.ready ? `${actionLabel} →` : `${t("checkAgain")} ↻`}
@@ -648,7 +839,7 @@ function App() {
                 <p>Aseprite {completedInstallation.version?.replace(/^v/, "") ?? selectedTag.replace(/^v/, "")}</p>
               </div>
               <div className="primary-actions">
-                <button className="button primary full" onClick={() => void api.launchInstallation(completedInstallation.id)}>▶ {t("openAseprite")}</button>
+                <button className="button primary full" disabled={recovery.blocked} onClick={() => void launchInstallation(completedInstallation.id)}>▶ {t("openAseprite")}</button>
                 <section className="post-install-support" aria-label={t("supportTitle")}>
                   <p>{t("supportAfterInstall")}</p>
                   <button className="button secondary full" onClick={() => void api.openExternal(BUY_URL)}>
@@ -674,11 +865,15 @@ function App() {
               </div>
               <p className="build-note">{t("buildingCanTake")}</p>
               <div className="progress-buttons">
-                {busy && !["finalizing", "validating"].includes(progress.stage) ? (
-                  <button className="button danger ghost" onClick={() => void api.cancelOperation()}>{t("cancel")}</button>
+                {busy ? (
+                  progress.canCancel ? (
+                    <button className="button danger ghost" onClick={() => void api.cancelOperation()}>{t("cancel")}</button>
+                  ) : (
+                    <p className="context-note" role="status">{t("finishingSafely")}</p>
+                  )
                 ) : progress.stage === "failed" ? (
                   <>
-                    <button className="button primary" onClick={() => void startInstall()}>{t("retry")}</button>
+                    <button className="button primary" disabled={recovery.blocked} onClick={() => void startInstall()}>{t("retry")}</button>
                     <button className="button ghost" onClick={() => setView("preflight")}>{"<"} {t("back")}</button>
                   </>
                 ) : (
@@ -704,7 +899,7 @@ function App() {
         >
             <span className="modal-icon"><PixelDocumentIcon /></span>
             <h2 id="legal-title">{flowTarget?.channel === "manual" ? t("adoptionTitle") : t("legalTitle")}</h2>
-            {flowTarget?.channel === "manual" && <p>{t("adoptionBody")}</p>}
+            {flowTarget?.channel === "manual" && <p>{t("adoptionBody", { path: platform.defaultTargetPath })}</p>}
             <p>{t("legalBody")}</p>
             <button className="text-link" onClick={() => void api.openExternal(EULA_URL)}>{t("readEula")} ↗</button>
             <section className="legal-support" aria-labelledby="support-title">
@@ -715,10 +910,10 @@ function App() {
               </button>
             </section>
             <label className="consent">
-              <input type="checkbox" checked={eulaAccepted} onChange={(event) => setEulaAccepted(event.target.checked)} />
+              <input type="checkbox" checked={eulaAccepted} disabled={recovery.blocked} onChange={(event) => setEulaAccepted(event.target.checked)} />
               <span>{t("legalConfirm")}</span>
             </label>
-            <button className="button primary full" disabled={!eulaAccepted} onClick={() => void startInstall()}>{t("continue")} →</button>
+            <button className="button primary full" disabled={!eulaAccepted || recovery.blocked} onClick={() => void startInstall()}>{t("continue")} →</button>
         </Modal>
       )}
 
@@ -732,12 +927,12 @@ function App() {
         >
             <span className="modal-icon" aria-hidden="true">{pendingAction.kind === "restore" ? "↺" : "×"}</span>
             <h2 id="confirmation-title">{t(pendingAction.kind === "restore" ? "restoreTitle" : "uninstallTitle")}</h2>
-            <p>{t(pendingAction.kind === "restore" ? "confirmRestore" : "confirmUninstall")}</p>
+            <p>{t(pendingAction.kind === "restore" ? "confirmRestore" : "confirmUninstall", { trash: platform.trashName })}</p>
             <p className="confirmation-path" title={pendingAction.installation.path}>{pendingAction.installation.path}</p>
             {actionError && <p className="confirmation-error" role="alert">{actionError}</p>}
             <div className="confirmation-actions">
               <button className="button ghost" disabled={busy} onClick={() => { setActionError(null); setPendingAction(null); }}>{t("cancel")}</button>
-              <button className={`button ${pendingAction.kind === "uninstall" ? "danger" : "primary"}`} disabled={busy} onClick={() => void confirmManagedAction()}>
+              <button className={`button ${pendingAction.kind === "uninstall" ? "danger" : "primary"}`} disabled={busy || recovery.blocked} onClick={() => void confirmManagedAction()}>
                 {busy
                   ? t(pendingAction.kind === "restore" ? "restoring" : "uninstalling")
                   : t(pendingAction.kind === "restore" ? "confirmRestoreAction" : "confirmUninstallAction")}
@@ -749,6 +944,7 @@ function App() {
       {helpPrerequisite && (
         <PrerequisiteHelpModal
           prerequisite={helpPrerequisite}
+          platform={platform}
           onClose={() => setHelpPrerequisite(null)}
         />
       )}

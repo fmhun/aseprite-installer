@@ -29,10 +29,11 @@ invariant(!html.includes("<!--app-html-->"), "the pre-render placeholder remains
 invariant(/<main\s+[^>]*id="main"[^>]*>/i.test(html), "the initial HTML does not contain the main landmark");
 invariant(occurrences(html, /<h1(?:\s|>)/g) === 1, "the page must expose exactly one H1");
 invariant(html.includes("Install <em>Aseprite</em>"), "the H1 is missing from the initial HTML");
-invariant(html.includes("Aseprite Installer is a free, MIT-licensed macOS utility"), "the factual product description is missing");
+invariant(html.includes("Aseprite Installer is a free, MIT-licensed desktop utility"), "the factual product description is missing");
 invariant(html.includes("Does the installer distribute Aseprite?"), "the FAQ is missing from the initial HTML");
 invariant(html.includes("Aseprite remains subject to its own EULA"), "the Aseprite license distinction is missing");
-invariant(html.includes("Aseprite-Installer-macOS-Universal.dmg"), "the direct download link is missing");
+invariant(html.includes('href="https://github.com/fmhun/aseprite-installer/releases/latest"'), "the latest release link is missing");
+invariant(!html.includes("/releases/latest/download/"), "the page guesses a release asset name");
 invariant(!html.includes("18 GB"), "the obsolete disk-space requirement remains");
 
 const title = html.match(/<title>([^<]+)<\/title>/)?.[1] ?? "";

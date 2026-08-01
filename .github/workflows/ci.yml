@@ -4,57 +4,215 @@ on:
   push:
     branches: [main]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+  DEBIAN_SMOKE_IMAGE: docker.io/library/debian:12-slim@sha256:7b140f374b289a7c2befc338f42ebe6441b7ea838a042bbd5acbfca6ec875818
+  FEDORA_SMOKE_IMAGE: docker.io/library/fedora:43@sha256:762d73ba1c455232b0272c5d445a34f36c4b9f421cbc05ce8102552325b6a222
+
 jobs:
   frontend:
     name: Frontend
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 24
+          node-version: 24.15.0
           cache: npm
       - run: npm ci
       - run: npm run lint
       - run: npm test
       - run: npm run build
 
-  rust:
-    name: Rust
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v6
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
-      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
-      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
-      - run: cargo test --manifest-path src-tauri/Cargo.toml
-
-  bundle:
-    name: Bundle (${{ matrix.target }})
-    needs: [frontend, rust]
+  native:
+    name: Native checks and bundle (${{ matrix.label }})
+    needs: frontend
     strategy:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-15
+          - label: macOS arm64
+            runner: macos-15
             target: aarch64-apple-darwin
-          - runner: macos-15-intel
+            arch: arm64
+            bundles: app,dmg
+            artifact: ci-macos-arm64
+          - label: macOS x64
+            runner: macos-15-intel
             target: x86_64-apple-darwin
+            arch: x86_64
+            bundles: app,dmg
+            artifact: ci-macos-x64
+          - label: Linux x64
+            runner: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            bundles: appimage,deb,rpm
+            artifact: ci-linux-x64
+          - label: Windows x64
+            runner: windows-2025
+            target: x86_64-pc-windows-msvc
+            bundles: nsis,msi
+            artifact: ci-windows-x64
     runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-node@v6
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: 24
+          node-version: 24.15.0
           cache: npm
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable
         with:
+          toolchain: 1.97.1
+          components: rustfmt, clippy
           targets: ${{ matrix.target }}
+      - name: Cache Cargo downloads
+        uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-${{ runner.os }}-${{ matrix.target }}-${{ hashFiles('src-tauri/Cargo.lock', 'rust-toolchain.toml') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-${{ matrix.target }}-
+      - name: Install Linux bundle dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            binutils \
+            build-essential \
+            cpio \
+            curl \
+            dbus-x11 \
+            desktop-file-utils \
+            file \
+            libayatana-appindicator3-dev \
+            libfuse2 \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            procps \
+            rpm \
+            wget \
+            xdotool \
+            xvfb
       - run: npm ci
-      - run: npm run tauri build -- --target ${{ matrix.target }}
+      - name: Check Rust formatting
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      - name: Lint native target
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked --target ${{ matrix.target }} -- -D warnings
+      - name: Test native target
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked --target ${{ matrix.target }}
+      - name: Build native bundles
+        run: npm run tauri build -- --ci --target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}" -- --locked
+      - name: Inspect macOS bundles
+        if: runner.os == 'macOS'
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          EXPECTED_ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          bundle_root="src-tauri/target/${BUILD_TARGET}/release/bundle"
+          app_path="${bundle_root}/macos/Aseprite Installer.app"
+          dmg_files=("${bundle_root}/dmg/"*.dmg)
+          test -d "$app_path"
+          test "${#dmg_files[@]}" -eq 1
+          codesign --verify --deep --strict --verbose=2 "$app_path"
+          executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
+          lipo -verify_arch "$EXPECTED_ARCH" "$app_path/Contents/MacOS/$executable_name"
+          if find "$app_path" \( -name 'Aseprite.app' -o -name 'aseprite' -o -name 'aseprite.exe' -o -iname 'Aseprite-v*-Source.zip' -o -iname 'Skia-*-Release-*.zip' -o -iname 'libskia*' -o -iname 'skia.lib' -o -iname 'skia.dll' -o -iname 'icudtl.dat' \) -print -quit | grep -q .; then
+            echo "The macOS installer bundle contains a forbidden upstream payload." >&2
+            exit 1
+          fi
+          hdiutil verify "${dmg_files[0]}"
+          mount_dir="$(mktemp -d)"
+          cleanup() {
+            hdiutil detach "$mount_dir" >/dev/null 2>&1 || true
+            rmdir "$mount_dir" >/dev/null 2>&1 || true
+          }
+          trap cleanup EXIT
+          hdiutil attach "${dmg_files[0]}" -readonly -nobrowse -mountpoint "$mount_dir"
+          codesign --verify --deep --strict --verbose=2 "$mount_dir/Aseprite Installer.app"
+          if find "$mount_dir" \( -name 'Aseprite.app' -o -name 'aseprite' -o -name 'aseprite.exe' -o -iname 'Aseprite-v*-Source.zip' -o -iname 'Skia-*-Release-*.zip' -o -iname 'libskia*' -o -iname 'skia.lib' -o -iname 'skia.dll' -o -iname 'icudtl.dat' \) -print -quit | grep -q .; then
+            echo "The macOS DMG contains a forbidden upstream payload." >&2
+            exit 1
+          fi
+          hdiutil detach "$mount_dir"
+          rmdir "$mount_dir"
+          trap - EXIT
+      - name: Verify and smoke Linux bundles
+        if: runner.os == 'Linux'
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          bundle_root="src-tauri/target/${BUILD_TARGET}/release/bundle"
+          appimages=("${bundle_root}/appimage/"*.AppImage)
+          debs=("${bundle_root}/deb/"*.deb)
+          rpms=("${bundle_root}/rpm/"*.rpm)
+          if [[ "${#appimages[@]}" -ne 1 || "${#debs[@]}" -ne 1 || "${#rpms[@]}" -ne 1 ]]; then
+            echo "Expected exactly one AppImage, deb, and rpm." >&2
+            exit 1
+          fi
+          bash .github/scripts/linux-package-smoke.sh all \
+            "${appimages[0]}" \
+            "${debs[0]}" \
+            "${rpms[0]}"
+      - name: Verify and smoke Windows bundles
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          BUILD_TARGET: ${{ matrix.target }}
+          EXPECTED_UPGRADE_CODE: 8969d2bf-7fec-5be0-8e91-3a8bf80c5201
+        run: |
+          $smokeParameters = @{
+            BundleRoot = "src-tauri/target/$env:BUILD_TARGET/release/bundle"
+            BuiltExecutable = "src-tauri/target/$env:BUILD_TARGET/release/aseprite-installer.exe"
+            ExpectedUpgradeCode = $env:EXPECTED_UPGRADE_CODE
+          }
+          & .github/scripts/windows-package-smoke.ps1 @smokeParameters
+      - name: Upload inspected bundles
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ${{ matrix.artifact }}
+          path: src-tauri/target/${{ matrix.target }}/release/bundle/**
+          if-no-files-found: error
+          retention-days: 5
+
+  quality-gate:
+    name: CI success
+    if: always()
+    needs: [frontend, native]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    steps:
+      - name: Require every quality and bundle job
+        env:
+          FRONTEND_RESULT: ${{ needs.frontend.result }}
+          NATIVE_RESULT: ${{ needs.native.result }}
+        run: |
+          if [[ "$FRONTEND_RESULT" != "success" || "$NATIVE_RESULT" != "success" ]]; then
+            echo "Required jobs did not all succeed: frontend=$FRONTEND_RESULT native=$NATIVE_RESULT" >&2
+            exit 1
+          fi

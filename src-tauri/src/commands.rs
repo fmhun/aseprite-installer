@@ -2,15 +2,19 @@ use crate::error::{AppResult, InstallerError};
 use crate::installer;
 use crate::models::{
     InstallRequest, InstallationChannel, InstallationInfo, OperationProgress, OperationStage,
-    PreflightReport, ReleaseInfo,
+    PlatformInfo, PreflightReport, RecoveryStatus, ReleaseInfo,
 };
-use crate::platform::{MacOsAdapter, PlatformAdapter, PreflightContext};
+use crate::platform::{current_adapter, PlatformAdapter, PreflightContext};
 use crate::releases;
 use crate::state::AppState;
+#[cfg(target_os = "macos")]
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
+#[cfg(target_os = "macos")]
 use std::process::Stdio;
+#[cfg(target_os = "macos")]
 use std::sync::atomic::Ordering;
+#[cfg(target_os = "macos")]
 use std::time::{Duration, Instant};
 use tauri::ipc::Channel;
 use tauri::{LogicalSize, State, Window};
@@ -66,11 +70,17 @@ pub async fn list_releases(
 }
 
 #[tauri::command]
+pub fn get_platform_info() -> AppResult<PlatformInfo> {
+    crate::platform::current_platform_info()
+}
+
+#[tauri::command]
 pub async fn scan_installations(state: State<'_, AppState>) -> AppResult<Vec<InstallationInfo>> {
+    let _observation = state.begin_observation()?;
     let managed = state
         .load_managed_state()
         .map_err(|error| map_plan_storage_error(error, &state.paths.registry_file))?;
-    MacOsAdapter::new()
+    current_adapter()
         .discover_installations(&state.paths, &managed)
         .await
 }
@@ -82,13 +92,14 @@ pub async fn run_preflight(
     adopt: bool,
     state: State<'_, AppState>,
 ) -> AppResult<PreflightReport> {
+    let _observation = state.begin_observation()?;
     let request = preflight_request(tag, target_path, adopt);
     let plan = resolve_install_plan(&state, &request).await?;
-    MacOsAdapter::new()
-        .preflight(&state.paths, &plan.preflight_context)
-        .await
+    let context = preflight_context_with_validated_operation_lock(&plan.preflight_context);
+    current_adapter().preflight(&state.paths, &context).await
 }
 
+#[cfg(target_os = "macos")]
 #[tauri::command]
 pub async fn install_build_tools(
     tag: String,
@@ -108,15 +119,29 @@ pub async fn install_build_tools(
             )
         })?;
         run_homebrew_install(&state, &brew, &cancelled).await?;
-        let mut context = plan.preflight_context.clone();
-        context.operation_lock_held = true;
-        MacOsAdapter::new().preflight(&state.paths, &context).await
+        let context = preflight_context_with_validated_operation_lock(&plan.preflight_context);
+        current_adapter().preflight(&state.paths, &context).await
     }
     .await;
     state.finish_operation();
     result
 }
 
+#[cfg(not(target_os = "macos"))]
+#[tauri::command]
+pub async fn install_build_tools(
+    _tag: String,
+    _target_path: Option<String>,
+    _adopt: bool,
+    _state: State<'_, AppState>,
+) -> AppResult<PreflightReport> {
+    Err(InstallerError::new(
+        "manualPrerequisites",
+        "Build prerequisites must be installed explicitly using the platform guidance. Aseprite Installer never elevates itself or changes the system toolchain.",
+    ))
+}
+
+#[cfg(target_os = "macos")]
 async fn run_homebrew_install(
     state: &AppState,
     brew: &Path,
@@ -190,6 +215,7 @@ async fn run_homebrew_install(
     ))
 }
 
+#[cfg(target_os = "macos")]
 async fn terminate_command_group(child: &mut tokio::process::Child, process_id: Option<u32>) {
     if let Some(process_id) = process_id {
         signal_command_group(process_id, "-TERM").await;
@@ -205,6 +231,7 @@ async fn terminate_command_group(child: &mut tokio::process::Child, process_id: 
     let _ = child.wait().await;
 }
 
+#[cfg(target_os = "macos")]
 async fn signal_command_group(process_id: u32, signal: &str) {
     let group = format!("-{process_id}");
     let _ = tokio::process::Command::new("/bin/kill")
@@ -213,6 +240,7 @@ async fn signal_command_group(process_id: u32, signal: &str) {
         .await;
 }
 
+#[cfg(target_os = "macos")]
 fn tail_text(value: &str, maximum_characters: usize) -> String {
     let mut characters = value
         .chars()
@@ -223,6 +251,7 @@ fn tail_text(value: &str, maximum_characters: usize) -> String {
     characters.into_iter().collect()
 }
 
+#[cfg(target_os = "macos")]
 fn homebrew_command_path(brew: &Path) -> String {
     let parent = brew.parent().unwrap_or_else(|| Path::new("/usr/local/bin"));
     format!(
@@ -246,9 +275,8 @@ pub async fn start_install(
     let cancelled = state.begin_operation()?;
     let result = async {
         let plan = resolve_install_plan(&state, &request).await?;
-        let adapter = MacOsAdapter::new();
-        let mut context = plan.preflight_context.clone();
-        context.operation_lock_held = true;
+        let adapter = current_adapter();
+        let context = preflight_context_with_validated_operation_lock(&plan.preflight_context);
         let preflight = adapter.preflight(&state.paths, &context).await?;
         if !preflight.ready {
             return Err(InstallerError::new(
@@ -306,7 +334,7 @@ async fn resolve_install_plan(
         .into_iter()
         .find(|release| release.tag == request.tag)
         .ok_or_else(unsupported_release_error)?;
-    let adapter = MacOsAdapter::new();
+    let adapter = current_adapter();
     let managed = state
         .load_managed_state()
         .map_err(|error| map_plan_storage_error(error, &state.paths.registry_file))?;
@@ -349,6 +377,16 @@ fn build_preflight_context(release: &ReleaseInfo, target: PathBuf) -> AppResult<
     })
 }
 
+fn preflight_context_with_validated_operation_lock(context: &PreflightContext) -> PreflightContext {
+    let mut context = context.clone();
+    // Commands call this only while holding either the shared observation lock
+    // or the exclusive mutation lock. Platform probes must not try to acquire
+    // the same operation lock exclusively and deadlock against their own
+    // reader; the held lock already proves that no mutation can overlap.
+    context.operation_lock_held = true;
+    context
+}
+
 fn unsupported_release_error() -> InstallerError {
     InstallerError::new(
         "unsupportedRelease",
@@ -380,21 +418,26 @@ fn resolve_target(
     let installation = find_by_path(installations, &requested_path).ok_or_else(|| {
         InstallerError::new(
             "unknownTarget",
-            "The requested installation target was not detected on this Mac.",
+            "The requested installation target was not detected on this computer.",
         )
     })?;
 
+    // Never carry the webview-provided spelling of a detected path into a
+    // destructive operation. `find_by_path` may accept an equivalent lexical,
+    // canonical, or case-insensitive spelling; the backend must then use the
+    // freshly discovered installation path as the authoritative target.
+    let detected_path = PathBuf::from(&installation.path);
     match installation.channel {
-        InstallationChannel::Managed => Ok((requested_path, Some(installation))),
+        InstallationChannel::Managed => Ok((detected_path, Some(installation))),
         InstallationChannel::Manual if request.adopt => {
             if installation.writable {
-                Ok((requested_path, Some(installation)))
+                Ok((detected_path, Some(installation)))
             } else {
                 let default_existing = find_by_path(installations, &default_target);
                 if default_existing.is_some() {
                     return Err(InstallerError::new(
                         "defaultOccupied",
-                        "The managed ~/Applications destination already contains another Aseprite copy.",
+                        "The managed destination already contains another Aseprite copy.",
                     ));
                 }
                 ensure_unclaimed_target_is_empty(&default_target, None)?;
@@ -424,12 +467,12 @@ fn ensure_unclaimed_target_is_empty(
     match std::fs::symlink_metadata(target) {
         Ok(_) => Err(InstallerError::new(
             "defaultOccupied",
-            "The managed ~/Applications destination is occupied by an item that is not a valid detected Aseprite installation.",
+            "The managed destination is occupied by an item that is not a valid detected Aseprite installation.",
         )),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(InstallerError::with_detail(
             "targetInspect",
-            "The managed ~/Applications destination could not be inspected safely.",
+            "The managed destination could not be inspected safely.",
             error.to_string(),
         )),
     }
@@ -449,7 +492,7 @@ fn find_by_path(installations: &[InstallationInfo], path: &Path) -> Option<Insta
 
 async fn installation_by_id(state: &AppState, id: &str) -> AppResult<InstallationInfo> {
     let managed = state.load_managed_state()?;
-    MacOsAdapter::new()
+    current_adapter()
         .discover_installations(&state.paths, &managed)
         .await?
         .into_iter()
@@ -464,16 +507,19 @@ pub fn cancel_operation(state: State<'_, AppState>) -> AppResult<()> {
 
 #[tauri::command]
 pub async fn launch_installation(id: String, state: State<'_, AppState>) -> AppResult<()> {
+    let _observation = state.begin_observation()?;
     let installation = installation_by_id(&state, &id).await?;
-    run_open(&[installation.path.as_str()]).await
+    crate::platform::launch_path(Path::new(&installation.path)).await
 }
 
 #[tauri::command]
 pub async fn reveal_installation(id: String, state: State<'_, AppState>) -> AppResult<()> {
+    let _observation = state.begin_observation()?;
     let installation = installation_by_id(&state, &id).await?;
-    run_open(&["-R", installation.path.as_str()]).await
+    crate::platform::reveal_path(Path::new(&installation.path)).await
 }
 
+#[cfg(target_os = "macos")]
 #[tauri::command]
 pub async fn restore_previous(
     id: String,
@@ -485,20 +531,92 @@ pub async fn restore_previous(
     result
 }
 
+#[cfg(any(target_os = "linux", target_os = "windows"))]
 #[tauri::command]
-pub fn uninstall_managed(id: String, state: State<'_, AppState>) -> AppResult<()> {
+pub async fn restore_previous(
+    id: String,
+    state: State<'_, AppState>,
+) -> AppResult<InstallationInfo> {
+    let state = state.inner().clone();
     let _cancelled = state.begin_operation()?;
-    let result = installer::uninstall_managed(&state, &id);
+    let worker_state = state.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        installer::restore_previous(&worker_state, &id)
+    })
+    .await
+    .map_err(|error| {
+        InstallerError::with_detail(
+            "operationWorker",
+            "The restore worker stopped unexpectedly.",
+            error.to_string(),
+        )
+    });
     state.finish_operation();
-    result
+    result?
 }
 
 #[tauri::command]
-pub fn clean_cache(state: State<'_, AppState>) -> AppResult<u64> {
+pub async fn uninstall_managed(id: String, state: State<'_, AppState>) -> AppResult<()> {
+    let state = state.inner().clone();
     let _cancelled = state.begin_operation()?;
-    let result = installer::clean_cache(&state);
+    let worker_state = state.clone();
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        installer::uninstall_managed(&worker_state, &id)
+    })
+    .await
+    .map_err(|error| {
+        InstallerError::with_detail(
+            "operationWorker",
+            "The uninstall worker stopped unexpectedly.",
+            error.to_string(),
+        )
+    });
     state.finish_operation();
-    result
+    result?
+}
+
+#[tauri::command]
+pub async fn clean_cache(state: State<'_, AppState>) -> AppResult<u64> {
+    let state = state.inner().clone();
+    let _cancelled = state.begin_operation()?;
+    let worker_state = state.clone();
+    let result =
+        tauri::async_runtime::spawn_blocking(move || installer::clean_cache(&worker_state))
+            .await
+            .map_err(|error| {
+                InstallerError::with_detail(
+                    "operationWorker",
+                    "The cache-cleanup worker stopped unexpectedly.",
+                    error.to_string(),
+                )
+            });
+    state.finish_operation();
+    result?
+}
+
+#[tauri::command]
+pub fn get_recovery_status(state: State<'_, AppState>) -> RecoveryStatus {
+    state.recovery_status()
+}
+
+#[tauri::command]
+pub async fn retry_recovery(state: State<'_, AppState>) -> AppResult<RecoveryStatus> {
+    let state = state.inner().clone();
+    tauri::async_runtime::spawn_blocking(move || match state.begin_operation() {
+        Ok(_) => {
+            state.finish_operation();
+            Ok(state.recovery_status())
+        }
+        Err(error) => Err(error),
+    })
+    .await
+    .map_err(|error| {
+        InstallerError::with_detail(
+            "operationWorker",
+            "The recovery worker stopped unexpectedly.",
+            error.to_string(),
+        )
+    })?
 }
 
 #[tauri::command]
@@ -512,7 +630,7 @@ pub async fn open_external(url: String) -> AppResult<()> {
             "Only approved official project and requirements documentation can be opened.",
         ));
     }
-    run_open(&[url.as_str()]).await
+    crate::platform::open_external_url(url.as_str()).await
 }
 
 fn is_allowed_external_url(url: &Url) -> bool {
@@ -544,23 +662,16 @@ fn is_allowed_external_url(url: &Url) -> bool {
         Some("formulae.brew.sh") => {
             url.path() == "/formula/cmake" || url.path() == "/formula/ninja"
         }
+        Some("learn.microsoft.com")
+        | Some("developer.microsoft.com")
+        | Some("support.microsoft.com")
+        | Some("visualstudio.microsoft.com")
+        | Some("gitforwindows.org")
+        | Some("ubuntu.com")
+        | Some("docs.fedoraproject.org")
+        | Some("wiki.archlinux.org")
+        | Some("doc.opensuse.org") => true,
         _ => false,
-    }
-}
-
-async fn run_open(arguments: &[&str]) -> AppResult<()> {
-    let output = tokio::process::Command::new("/usr/bin/open")
-        .args(arguments)
-        .output()
-        .await?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(InstallerError::with_detail(
-            "open",
-            "macOS could not open the requested item.",
-            String::from_utf8_lossy(&output.stderr).trim().to_owned(),
-        ))
     }
 }
 
@@ -605,6 +716,36 @@ mod tests {
     }
 
     #[test]
+    fn detected_target_path_is_authoritative_after_equivalent_path_matching() {
+        let directory = tempfile::tempdir().unwrap();
+        let detected = directory.path().join("Aseprite");
+        let intermediate = directory.path().join("intermediate");
+        std::fs::create_dir(&detected).unwrap();
+        std::fs::create_dir(&intermediate).unwrap();
+        let requested = intermediate.join("..").join("Aseprite");
+        let request = InstallRequest {
+            tag: "v1.3.18.1".into(),
+            target_path: Some(requested.to_string_lossy().into_owned()),
+            adopt: false,
+            eula_accepted: true,
+        };
+
+        let (resolved, _) = resolve_target(
+            &request,
+            directory.path().join("default"),
+            &[installation(
+                &detected.to_string_lossy(),
+                InstallationChannel::Managed,
+                true,
+            )],
+        )
+        .unwrap();
+
+        assert_eq!(resolved, detected);
+        assert_ne!(resolved, requested);
+    }
+
+    #[test]
     fn refuses_to_overwrite_an_unrecognized_default_target() {
         let directory = tempfile::tempdir().unwrap();
         let target = directory.path().join("Aseprite.app");
@@ -639,6 +780,22 @@ mod tests {
 
         assert_eq!(context.target, target);
         assert_eq!(context.minimum_cmake_version, [3, 20, 0]);
+    }
+
+    #[test]
+    fn locked_preflight_context_skips_reacquiring_the_operation_lock() {
+        let original = PreflightContext {
+            target: PathBuf::from("/Users/test/Applications/Aseprite.app"),
+            minimum_cmake_version: [3, 20, 0],
+            operation_lock_held: false,
+        };
+
+        let locked = preflight_context_with_validated_operation_lock(&original);
+
+        assert!(locked.operation_lock_held);
+        assert!(!original.operation_lock_held);
+        assert_eq!(locked.target, original.target);
+        assert_eq!(locked.minimum_cmake_version, original.minimum_cmake_version);
     }
 
     #[test]

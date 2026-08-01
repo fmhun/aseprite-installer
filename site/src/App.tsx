@@ -5,7 +5,7 @@ import type { DemoPhase } from "./demo";
 import { useDemoPlayback } from "./useDemoPlayback";
 
 const GITHUB_URL = "https://github.com/fmhun/aseprite-installer";
-const DOWNLOAD_URL = `${GITHUB_URL}/releases/latest/download/Aseprite-Installer-macOS-Universal.dmg`;
+const DOWNLOAD_URL = `${GITHUB_URL}/releases/latest`;
 const BUY_URL = "https://www.aseprite.org/buy/";
 const EULA_URL = "https://github.com/aseprite/aseprite/blob/main/EULA.txt";
 
@@ -71,10 +71,10 @@ function ReleaseScreen() {
 }
 
 const tools = [
-  ["Xcode + macOS SDK", "16.2"],
-  ["CMake", "3.31"],
-  ["Ninja", "1.12"],
-  ["Free space", "~6 GB"],
+  ["C++ toolchain", "Detected"],
+  ["CMake", "Ready"],
+  ["Ninja", "Ready"],
+  ["Free space", "6 GB+"],
 ] as const;
 
 function PreflightScreen() {
@@ -84,7 +84,7 @@ function PreflightScreen() {
       <div className="demo-panel demo-flow-panel">
         <div className="demo-kicker">STEP 2 OF 3</div>
         <p className="demo-panel-title">Ready to build</p>
-        <p>Your tools stay on your Mac.</p>
+        <p>Your build tools stay on this device.</p>
         <ul className="demo-tool-list">
           {tools.map(([tool, version]) => (
             <li key={tool}>
@@ -103,8 +103,8 @@ function PreflightScreen() {
 const stageCopy = {
   download: ["Downloading official source", "github.com/aseprite/aseprite"],
   verify: ["Verifying source archive", "SHA-256 digest matched"],
-  compile: ["Compiling your local app", "build.sh --auto --norun"],
-  sign: ["Signing local bundle", "ad-hoc signature applied"],
+  compile: ["Compiling your local app", "isolated CMake + Ninja build"],
+  sign: ["Validating local artifact", "native executable checked"],
   install: ["Installing safely", "staging before replacement"],
 } as const;
 
@@ -142,7 +142,7 @@ function CompleteScreen() {
           <div className="demo-kicker">BUILD COMPLETE</div>
           <p className="demo-panel-title">Your local app is ready</p>
           <p>Aseprite · personal build</p>
-          <code>~/Applications/Aseprite.app</code>
+          <code>Managed application folder</code>
         </div>
         <PixelButton>Done</PixelButton>
       </div>
@@ -193,7 +193,7 @@ export function ProductDemo() {
       </div>
       <div className="demo-stand" aria-hidden="true"><span /></div>
       <figcaption id="demo-caption" className="site-sr-only">
-        The installer selects an official Aseprite release, checks local build tools, verifies and compiles the source, then installs your personal app in Applications.
+        The installer selects an official Aseprite release, checks native build tools, verifies and compiles the source, then installs a managed personal copy on your system.
       </figcaption>
     </figure>
   );
@@ -215,7 +215,7 @@ function App() {
           <a href="#faq">FAQ</a>
           <a href={GITHUB_URL}>GitHub <ExternalArrow /></a>
         </nav>
-        <a className="site-button site-button--small" href={DOWNLOAD_URL}>Download</a>
+        <a className="site-button site-button--small" href={DOWNLOAD_URL}>Downloads</a>
       </header>
 
       <main id="main" tabIndex={-1}>
@@ -224,13 +224,17 @@ function App() {
             <h1>Install <em>Aseprite</em><br />from source.</h1>
             <p className="site-eyebrow site-hero-tag"><span /> AND FOR FREE</p>
             <p className="site-lead">
-              Aseprite Installer is a free, MIT-licensed macOS utility that checks the required build tools, verifies an official source release, and compiles your personal Aseprite copy locally.
+              Aseprite Installer is a free, MIT-licensed desktop utility that checks the required build tools, verifies an official source release, and compiles your personal copy locally on macOS, Windows, or Linux. Nothing is replaced until the result is ready.
             </p>
             <div className="site-hero-actions">
-              <a className="site-button" href={DOWNLOAD_URL}>Download for macOS <span aria-hidden="true">↓</span></a>
+              <a className="site-button" href={DOWNLOAD_URL}>Choose your installer <span aria-hidden="true">↓</span></a>
               <a className="site-text-link" href={GITHUB_URL}>View source on GitHub <ExternalArrow /></a>
             </div>
-            <p className="site-compatibility">macOS 15.2+ <i /> Universal DMG <i /> Apple Silicon + Intel</p>
+            <p className="site-compatibility">
+              <span>macOS · Apple Silicon + Intel</span><i />
+              <span>Windows 11 · x64</span><i />
+              <span>Linux · x86_64</span>
+            </p>
           </div>
 
           <div className="site-demo-wrap">
@@ -245,42 +249,59 @@ function App() {
         <section className="site-section site-install" id="install">
           <div className="site-install-copy">
             <p className="site-eyebrow"><span /> INSTALL</p>
-            <h2>Drop in.<br />Build local.</h2>
+            <h2>Pick your package.<br />Build local.</h2>
             <ol className="site-install-steps">
-              <li><span>1</span><div><strong>Download</strong><small>Get the universal DMG from the latest GitHub release.</small></div></li>
-              <li><span>2</span><div><strong>Open the DMG</strong><small>Move the installer to Applications, or run it from the disk image.</small></div></li>
-              <li><span>3</span><div><strong>First launch</strong><small>If macOS blocks it, Control-click the app and choose <b>Open</b>.</small></div></li>
+              <li><span>1</span><div><strong>Open the latest release</strong><small>GitHub lists every supported installer package together in one release.</small></div></li>
+              <li><span>2</span><div><strong>Match your system</strong><small>Choose the architecture and native package format shown for your platform.</small></div></li>
+              <li><span>3</span><div><strong>Run the installer</strong><small>Follow your operating system’s normal package flow, then start a verified local build.</small></div></li>
             </ol>
-            <a className="site-button" href={DOWNLOAD_URL}>Download universal DMG <span aria-hidden="true">↓</span></a>
+            <a className="site-button" href={DOWNLOAD_URL}>View latest release <span aria-hidden="true">↓</span></a>
           </div>
 
-          <div className="site-dmg" role="img" aria-label="Illustration of the installer disk image">
-            <div className="site-dmg-titlebar">
+          <div className="site-package-board" aria-label="Available installer packages by platform">
+            <div className="site-package-titlebar">
               <span><i /><i /><i /></span>
-              <strong>Aseprite Installer</strong>
+              <strong>Desktop packages</strong>
               <small>▦</small>
             </div>
-            <div className="site-dmg-canvas">
-              <div className="site-dmg-app">
-                <img src={installerIcon} alt="" width="88" height="88" />
-                <span>Aseprite Installer</span>
+            <div className="site-package-grid">
+              <div className="site-package-card">
+                <span className="site-package-status">AVAILABLE</span>
+                <strong>macOS</strong>
+                <small>Apple Silicon + Intel</small>
+                <code>arm64 DMG · x64 DMG</code>
               </div>
-              <div className="site-dmg-arrow"><i /><i /><i /></div>
-              <div className="site-folder"><span>Applications</span></div>
+              <div className="site-package-card">
+                <span className="site-package-status">AVAILABLE</span>
+                <strong>Windows 11</strong>
+                <small>x64</small>
+                <code>NSIS .exe · MSI</code>
+              </div>
+              <div className="site-package-card">
+                <span className="site-package-status">AVAILABLE</span>
+                <strong>Linux</strong>
+                <small>x86_64</small>
+                <code>AppImage · .deb · .rpm</code>
+              </div>
             </div>
-            <div className="site-dmg-status">2 items · read-only disk image</div>
+            <div className="site-package-note">macOS ad-hoc signed · Windows/Linux unsigned · checksums + attestations</div>
           </div>
 
           <div className="site-requirements">
-            <p className="site-requirements-note"><strong>Aseprite Installer manages requirement setup for you</strong> — installing supported tools automatically and guiding you through everything else.</p>
-            <span>macOS 15.2+</span><span>Xcode + SDK</span><span>CMake</span><span>Ninja</span><span>~6 GB free</span>
+            <p className="site-requirements-note"><strong>Aseprite Installer checks your setup for you</strong> — use the built-in platform guides to resolve anything missing, then check again.</p>
+            <span>Native C++ toolchain</span><span>Platform SDK</span><span>CMake</span><span>Ninja</span><span>~6 GB free</span>
+          </div>
+          <div className="site-platforms" aria-label="Platform availability">
+            <span><i className="site-dot site-dot--available" /> macOS <small>available</small></span>
+            <span><i className="site-dot site-dot--available" /> Windows <small>available</small></span>
+            <span><i className="site-dot site-dot--available" /> Linux <small>available</small></span>
           </div>
         </section>
 
         <section className="site-section site-how" id="how-it-works">
           <div className="site-section-heading">
             <p className="site-eyebrow"><span /> HOW IT WORKS</p>
-            <h2>Three steps.<br />One local app.</h2>
+            <h2>Three steps.<br />One verified workflow.</h2>
           </div>
           <ol className="site-process">
             <li>
@@ -289,11 +310,11 @@ function App() {
             </li>
             <li>
               <div className="site-process-number">02</div>
-              <div><h3>Get ready to build</h3><p>Let the installer set up CMake and Ninja through Homebrew, or follow the built-in guides to resolve each requirement manually.</p></div>
+              <div><h3>Get ready to build</h3><p>Check the native compiler and SDK, CMake, Ninja, disk space, and personal-use terms for your platform.</p></div>
             </li>
             <li>
               <div className="site-process-number">03</div>
-              <div><h3>Build safely</h3><p>Verify, compile, sign, and stage the app before it reaches <code>~/Applications</code>.</p></div>
+              <div><h3>Build safely</h3><p>Verify, compile, validate, and stage the app before replacing a managed installation.</p></div>
             </li>
           </ol>
         </section>
@@ -306,7 +327,7 @@ function App() {
           </div>
           <nav className="site-source-links" aria-label="Open source project links">
             <a href={GITHUB_URL}><span>Browse the code</span><small>GitHub repository</small><ExternalArrow /></a>
-            <a href={`${GITHUB_URL}/releases`}><span>Releases</span><small>DMGs and changelog</small><ExternalArrow /></a>
+            <a href={`${GITHUB_URL}/releases`}><span>Releases</span><small>Packages, checksums, and changelog</small><ExternalArrow /></a>
             <a href={`${GITHUB_URL}/issues`}><span>Issues</span><small>Report a bug</small><ExternalArrow /></a>
             <a href={`${GITHUB_URL}/security/policy`}><span>Security</span><small>Private reporting</small><ExternalArrow /></a>
           </nav>
@@ -323,8 +344,8 @@ function App() {
               <p>No. It downloads an official source archive only after you choose a release, verifies its GitHub-provided SHA-256 digest, and compiles your personal copy locally.</p>
             </details>
             <details>
-              <summary>Why might macOS show a warning?<span aria-hidden="true">+</span></summary>
-              <p>The current release is ad-hoc signed and not notarized by Apple; it does not use a Developer ID certificate. Control-click the installer, choose Open, then confirm once.</p>
+              <summary>Why might my operating system show a warning?<span aria-hidden="true">+</span></summary>
+              <p>macOS packages are ad-hoc signed, while Windows and Linux packages are currently unsigned. Verify the published SHA-256 checksum and GitHub attestation, then follow the platform guidance in the README.</p>
             </details>
             <details>
               <summary>What happens to an existing copy?<span aria-hidden="true">+</span></summary>

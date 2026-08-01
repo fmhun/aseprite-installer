@@ -11,11 +11,14 @@ export type OperationStage =
   | "verifying"
   | "extracting"
   | "compiling"
+  | "preparingArtifact"
   | "signing"
   | "backingUp"
   | "installing"
+  | "integrating"
   | "finalizing"
   | "validating"
+  | "rollingBack"
   | "completed"
   | "failed"
   | "cancelled";
@@ -64,11 +67,31 @@ export interface PreflightReport {
   prerequisites: Prerequisite[];
 }
 
+export interface PlatformInfo {
+  id: "macos" | "windows" | "linux";
+  displayName: string;
+  architecture: string;
+  supported: boolean;
+  unsupportedReason: string | null;
+  defaultTargetPath: string;
+  fileManagerName: string;
+  trashName: string;
+  shellName: string;
+}
+
+export interface RecoveryStatus {
+  blocked: boolean;
+  message: string | null;
+  detail: string | null;
+  journalPath: string | null;
+}
+
 export interface OperationProgress {
   stage: OperationStage;
   percent: number | null;
   message: string;
   logLine: string | null;
+  canCancel: boolean;
 }
 
 export interface InstallerError {

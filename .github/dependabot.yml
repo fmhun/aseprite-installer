@@ -1,0 +1,32 @@
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    open-pull-requests-limit: 5
+    schedule:
+      interval: weekly
+    groups:
+      github-actions:
+        patterns:
+          - "*"
+
+  - package-ecosystem: npm
+    directory: /
+    open-pull-requests-limit: 5
+    schedule:
+      interval: weekly
+    groups:
+      frontend-dependencies:
+        patterns:
+          - "*"
+
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    open-pull-requests-limit: 5
+    schedule:
+      interval: weekly
+    groups:
+      rust-dependencies:
+        patterns:
+          - "*"

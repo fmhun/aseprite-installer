@@ -1207,6 +1207,20 @@ select {
   border-left: 6px solid var(--green);
 }
 
+.recovery-alert {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+}
+
+.recovery-alert .button {
+  margin-top: 0.25rem;
+}
+
+.recovery-alert small {
+  overflow-wrap: anywhere;
+}
+
 .alert button {
   border: 0;
   color: var(--accent);

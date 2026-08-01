@@ -28,7 +28,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "createUpdaterArtifacts": false,
     "category": "DeveloperTool",
     "shortDescription": "Build Aseprite from official sources",
     "longDescription": "Unofficial utility that compiles and manages a personal Aseprite installation from official source releases.",
@@ -39,10 +39,6 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ],
-    "macOS": {
-      "minimumSystemVersion": "15.2",
-      "signingIdentity": "-"
-    }
+    ]
   }
 }

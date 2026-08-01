@@ -1,0 +1,16 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "targets": ["nsis", "msi"],
+    "windows": {
+      "allowDowngrades": false,
+      "nsis": {
+        "installMode": "currentUser"
+      },
+      "wix": {
+        "upgradeCode": "8969d2bf-7fec-5be0-8e91-3a8bf80c5201",
+        "enableElevatedUpdateTask": false
+      }
+    }
+  }
+}

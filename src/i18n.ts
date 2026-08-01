@@ -1,5 +1,5 @@
 const messages = {
-  checking: "Checking your Mac…",
+  checking: "Checking {platform}…",
   checkingInstallation: "Looking for Aseprite…",
   installationSteps: "Installation steps",
   releaseStep: "Release",
@@ -31,15 +31,17 @@ const messages = {
   manualStatusHint:
     "This copy was installed manually. It can be adopted safely before replacement.",
   manualReadOnlyHint:
-    "This manual copy cannot be replaced by the current account. Install a separate managed copy in ~/Applications.",
+    "This manual copy cannot be replaced by the current account. Install a separate managed copy at {path}.",
   managedReadOnlyHint:
-    "This managed copy is no longer writable by the current account. Install a separate copy or restore its permissions outside the installer.",
+    "This managed copy is no longer writable by the current account. Install a separate copy at {path} or restore its permissions outside the installer.",
   moreOptions: "More options",
   otherInstallations: "Other detected installations ({count})",
   back: "Back",
   chooseVersionTitle: "Choose the source release",
   chooseVersionBody:
     "Only verified Aseprite 1.3.x source archives are offered.",
+  defaultInstallTarget: "Default location on {platform}: {path}",
+  selectedInstallTarget: "Selected installation location: {path}",
   loadingReleases: "Loading official releases…",
   continueToChecks: "Check requirements",
   checkToolsTitle: "Check build requirements",
@@ -56,14 +58,17 @@ const messages = {
   installFailed: "Installation stopped",
   done: "Done",
   restoreComplete: "The previous installation was restored.",
-  uninstallComplete: "The managed application was moved to the Trash.",
+  uninstallComplete: "The managed application was moved to the {trash}.",
+  unsupportedPlatform: "Unsupported {platform} configuration",
+  unsupportedPlatformFallback:
+    "This architecture does not have an officially supported Aseprite build path.",
   managed: "Managed",
   manual: "Manual",
   steam: "Steam",
   packageManager: "Package manager",
   unknownVersion: "Unknown version",
   open: "Open",
-  reveal: "Show in Finder",
+  reveal: "Show in {fileManager}",
   restore: "Restore previous",
   uninstall: "Uninstall",
   includePrereleases: "Include beta and RC releases",
@@ -93,6 +98,13 @@ const messages = {
   continue: "Accept and start",
   close: "Close",
   operationFailed: "The operation could not be completed.",
+  recoveryBlockedTitle: "An interrupted installation needs attention",
+  recoveryBlockedBody:
+    "Aseprite Installer is open in safe read-only mode. It will not launch or change Aseprite until the recorded transaction is recovered.",
+  recoveryJournal: "Recovery journal: {path}",
+  retryRecovery: "Retry safe recovery",
+  retryingRecovery: "Recovering…",
+  recoveryComplete: "The interrupted installation was recovered safely.",
   retry: "Try again",
   restoreTitle: "Restore the previous installation?",
   confirmRestore:
@@ -100,7 +112,7 @@ const messages = {
   confirmRestoreAction: "Restore previous",
   uninstallTitle: "Uninstall Aseprite?",
   confirmUninstall:
-    "Only the managed application will be moved. Your preferences and artwork will not be removed.",
+    "Only the managed application will be moved to the {trash}. Your preferences and artwork will not be removed.",
   confirmUninstallAction: "Uninstall",
   restoring: "Restoring…",
   uninstalling: "Uninstalling…",
@@ -110,9 +122,11 @@ const messages = {
     "This installation is managed by its original channel and is read-only here.",
   adoptionTitle: "Adopt manual installation",
   adoptionBody:
-    "The existing app will be backed up before the selected release replaces it. If its folder is not writable, a managed copy will be installed in ~/Applications instead.",
+    "The existing app will be backed up before the selected release replaces it. If its folder is not writable, a managed copy will be installed at {path} instead.",
   buildingCanTake:
     "Compilation can take several minutes and temporarily use 3–6 GB.",
+  finishingSafely:
+    "Finishing a protected installation step. Cancellation will be available only after the transaction is safe.",
   supportAfterInstall:
     "If Aseprite becomes part of your workflow, consider buying an official copy to support its continued development.",
   supportDevelopment: "Support Aseprite development",

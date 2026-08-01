@@ -7,7 +7,7 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks for helping improve Aseprite Installer. This tracker is for the installer, not Aseprite itself.
+        Thanks for helping improve Aseprite Installer. This tracker is for the installer, not Aseprite itself. Remove secrets, usernames, and personal paths from logs before attaching them.
 
   - type: checkboxes
     id: checks
@@ -60,6 +60,8 @@ body:
         - Download or verification
         - Compilation
         - Installation, update, restore, or uninstall
+        - Start menu, desktop menu, Applications, or launch/reveal integration
+        - Installer package or application startup
         - Other
     validations:
       required: true
@@ -68,36 +70,72 @@ body:
     id: installer-version
     attributes:
       label: Aseprite Installer version
-      description: Find this in the application bundle or release name.
+      description: Find this in the application package or release name.
       placeholder: v0.1.0
     validations:
       required: true
 
-  - type: input
-    id: macos-version
+  - type: dropdown
+    id: operating-system
     attributes:
-      label: macOS version
-      placeholder: macOS 15.2
+      label: Operating system
+      options:
+        - macOS
+        - Windows
+        - Linux
+    validations:
+      required: true
+
+  - type: input
+    id: os-version
+    attributes:
+      label: Operating system version
+      description: Include the Windows build or Linux distribution release when available.
+      placeholder: macOS 15.2, Windows 11 24H2 build 26100, or Ubuntu 22.04
     validations:
       required: true
 
   - type: dropdown
     id: architecture
     attributes:
-      label: Mac architecture
+      label: Architecture
       options:
-        - Apple Silicon
-        - Intel
+        - Apple Silicon (arm64)
+        - Intel/AMD x86_64
+        - Other or unknown
+    validations:
+      required: true
+
+  - type: dropdown
+    id: package
+    attributes:
+      label: Installer package
+      options:
+        - macOS app archive
+        - macOS DMG
+        - Linux AppImage
+        - Linux deb
+        - Linux rpm
+        - Windows NSIS
+        - Windows MSI
+        - Development build
         - Unknown
     validations:
       required: true
+
+  - type: input
+    id: linux-distribution
+    attributes:
+      label: Linux distribution and desktop
+      description: Required only for Linux reports. Include distribution, version, desktop environment, and session type when known.
+      placeholder: Fedora 42, GNOME 48, Wayland
 
   - type: textarea
     id: logs
     attributes:
       label: Relevant logs
-      description: Paste only the relevant section. Remove secrets and personal information first.
-      render: shell
+      description: Paste only the relevant section. Remove secrets, usernames, and personal paths first.
+      render: text
 
   - type: textarea
     id: screenshots

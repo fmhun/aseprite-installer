@@ -16,6 +16,8 @@ export interface PrerequisiteGuide {
   links: HelpLink[];
 }
 
+export type GuidePlatform = "macos" | "windows" | "linux";
+
 const ASEPRITE_INSTALL_URL =
   "https://github.com/aseprite/aseprite/blob/main/INSTALL.md";
 
@@ -483,11 +485,405 @@ const guides: Record<string, PrerequisiteGuide> = {
   },
 };
 
-export function getPrerequisiteGuide(id: string): PrerequisiteGuide {
-  return guides[id] ?? {
+const WINDOWS_CPP_DOCS =
+  "https://learn.microsoft.com/en-us/cpp/build/vscpp-step-0-installation?view=msvc-170";
+const WINDOWS_SDK_DOCS =
+  "https://developer.microsoft.com/en-us/windows/downloads/windows-sdk/";
+
+const windowsBuildToolsGuide: PrerequisiteGuide = {
+  title: "Install the Windows C++ build tools",
+  summary:
+    "Aseprite needs a native Visual Studio 2022 x64 toolchain, Windows SDK 10.0.26100.0, CMake, and Ninja. The installer never changes Visual Studio or requests elevation; complete these steps yourself, then check again.",
+  steps: [
+    {
+      title: "Add the Visual Studio C++ workload",
+      body: "Open Visual Studio Installer, choose Modify for Visual Studio 2022 or Build Tools 2022, then select Desktop development with C++. In Individual components, keep the latest MSVC v143 x64/x86 tools and Windows 11 SDK 10.0.26100.0 selected.",
+    },
+    {
+      title: "Install CMake and Ninja",
+      body: "Use the CMake tools included by the Visual Studio workload, or run these winget commands yourself in PowerShell. Aseprite Installer only displays these commands; it never executes them or changes Visual Studio.",
+      command:
+        "winget install --exact --id Kitware.CMake\nwinget install --exact --id Ninja-build.Ninja",
+    },
+    {
+      title: "Reopen and verify",
+      body: "Close and reopen Aseprite Installer so it can discover the updated Visual Studio environment, then run Check again. A Windows restart is normally unnecessary.",
+      command: "cmake --version\nninja --version",
+    },
+  ],
+  links: [
+    { label: "Microsoft: Install C++ support", url: WINDOWS_CPP_DOCS },
+    { label: "Microsoft: Windows SDK", url: WINDOWS_SDK_DOCS },
+    { label: "Aseprite build requirements", url: ASEPRITE_INSTALL_URL },
+  ],
+};
+
+const windowsDiskGuide: PrerequisiteGuide = {
+  title: "Free the build safety budget",
+  summary:
+    "The installer reserves a conservative 6 GB safety budget on the volume containing its local build cache.",
+  steps: [
+    {
+      title: "Review storage",
+      body: "Open Settings › System › Storage and inspect the drive containing the reported local app-data path.",
+    },
+    {
+      title: "Free the reported amount",
+      body: "Review temporary files and large content before removing anything. Aseprite Installer never deletes unrelated files or empties the Recycle Bin.",
+    },
+    {
+      title: "Check again",
+      body: "Return after enough space is available; no Windows restart is required.",
+    },
+  ],
+  links: [
+    {
+      label: "Microsoft: Free up drive space",
+      url: "https://support.microsoft.com/en-us/windows/free-up-drive-space-in-windows-85529ccb-c365-490d-b548-831022bc9b32",
+    },
+  ],
+};
+
+const windowsGuides: Record<string, PrerequisiteGuide> = {
+  nonElevated: {
+    title: "Run the installer as a standard user",
+    summary:
+      "Aseprite Installer is per-user software and must not run with an administrator token. It never needs Run as administrator.",
+    steps: [
+      {
+        title: "Close the elevated copy",
+        body: "Quit this window. Do not change folder ownership or disable Windows security controls.",
+      },
+      {
+        title: "Open it normally",
+        body: "Launch Aseprite Installer from the Start menu or File Explorer without choosing Run as administrator.",
+      },
+      {
+        title: "Check again",
+        body: "Return to Requirements and rerun the checks. No Windows restart is required.",
+      },
+    ],
+    links: [{ label: "Aseprite build requirements", url: ASEPRITE_INSTALL_URL }],
+  },
+  osVersion: {
+    title: "Use Windows 11 x64",
+    summary:
+      "The supported native build path requires Windows 11 x64 (build 22000 or newer). WSL and Windows-on-ARM emulation are not supported build environments.",
+    steps: [
+      {
+        title: "Check the Windows version",
+        body: "Open Settings › System › About and review Windows specifications and System type.",
+      },
+      {
+        title: "Install supported updates",
+        body: "Use Settings › Windows Update, then return here after any requested restart.",
+      },
+    ],
+    links: [
+      {
+        label: "Microsoft: Windows 11 requirements",
+        url: "https://support.microsoft.com/en-us/windows/windows-11-system-requirements-86c11283-ea52-4782-9efd-7674389a7ba3",
+      },
+      { label: "Aseprite build requirements", url: ASEPRITE_INSTALL_URL },
+    ],
+  },
+  architecture: {
+    title: "Use the native Windows x64 installer",
+    summary:
+      "Aseprite’s supported Windows Skia package and this installer’s build process target native x86_64 only.",
+    steps: [
+      {
+        title: "Check System type",
+        body: "Open Settings › System › About. Use the x64 Aseprite Installer on an x64-based Windows 11 computer.",
+      },
+      {
+        title: "Avoid emulated build environments",
+        body: "Do not build through WSL, an ARM emulation layer, or a cross compiler; use a native Windows x64 session.",
+      },
+    ],
+    links: [{ label: "Aseprite build requirements", url: ASEPRITE_INSTALL_URL }],
+  },
+  visualStudio: windowsBuildToolsGuide,
+  cmake: windowsBuildToolsGuide,
+  ninja: windowsBuildToolsGuide,
+  toolchain: windowsBuildToolsGuide,
+  workspace: {
+    title: "Use a local writable build folder",
+    summary:
+      "The workspace and destination must support local file creation, execution, and atomic renames. Network and UNC build folders are not supported.",
+    steps: [
+      {
+        title: "Keep installer data local",
+        body: "Use the default per-user local app-data and installation folders. Avoid a network share, redirected UNC folder, or read-only location.",
+      },
+      {
+        title: "Restore exact permissions",
+        body: "If the reported path is blocked, restore write access for your user or ask your administrator. Do not reopen the installer as administrator.",
+      },
+      { title: "Check again", body: "Rerun the requirement check after fixing the reported path." },
+    ],
+    links: [{ label: "Aseprite build requirements", url: ASEPRITE_INSTALL_URL }],
+  },
+  destination: {
+    title: "Choose a writable per-user destination",
+    summary:
+      "The destination must be local and writable by your standard Windows account so replacement and rollback stay transactional.",
+    steps: [
+      {
+        title: "Use the default per-user folder",
+        body: "Prefer the location shown by Aseprite Installer. Keep Steam, package-manager, and other users’ copies under their original owner.",
+      },
+      {
+        title: "Check Windows Security",
+        body: "If Controlled Folder Access blocks the exact location, review the reported event and allow only the exact installer executable whose SHA-256 checksum and GitHub provenance you verified, if your policy permits it; never disable protection globally.",
+      },
+      { title: "Check again", body: "Rerun the requirement check; no restart is normally required." },
+    ],
+    links: [
+      {
+        label: "Microsoft: Controlled folder access",
+        url: "https://support.microsoft.com/en-us/windows/virus-and-threat-protection-in-the-windows-security-app-1362f4cd-d71a-b52a-0b66-c2820032b65e",
+      },
+      { label: "Aseprite build requirements", url: ASEPRITE_INSTALL_URL },
+    ],
+  },
+  executableDestination: {
+    title: "Allow programs in the destination",
+    summary:
+      "The selected local destination must permit Aseprite’s executable to run under your standard account.",
+    steps: [
+      {
+        title: "Review the reported path",
+        body: "Use a normal per-user local application folder. If organization policy blocks executables there, ask IT for an approved location.",
+      },
+      { title: "Check again", body: "Rerun the functional destination probe after the policy or path changes." },
+    ],
+    links: [{ label: "Aseprite build requirements", url: ASEPRITE_INSTALL_URL }],
+  },
+  asepriteClosed: {
+    title: "Close the selected Aseprite copy",
+    summary:
+      "Windows cannot safely replace an executable while the selected Aseprite installation is running.",
+    steps: [
+      { title: "Save your work", body: "Save every open sprite, then exit the selected Aseprite copy." },
+      {
+        title: "Check Task Manager",
+        body: "If the check still fails, open Task Manager and close only the Aseprite process using the reported executable path.",
+      },
+      { title: "Check again", body: "No Windows restart is required." },
+    ],
+    links: [{ label: "Aseprite build requirements", url: ASEPRITE_INSTALL_URL }],
+  },
+  disk: windowsDiskGuide,
+  diskSpace: windowsDiskGuide,
+};
+
+const linuxPackagesGuide: PrerequisiteGuide = {
+  title: "Install the Linux build requirements",
+  summary:
+    "Install Clang, the GNU C++ standard library toolchain, CMake, Ninja, and the X11/OpenGL/font development packages with your distribution’s package manager. These commands are guidance only: Aseprite Installer never runs sudo or modifies system packages.",
+  steps: [
+    {
+      title: "Debian or Ubuntu",
+      body: "Run this yourself in a terminal, review the package plan, and approve it through your normal administrator policy.",
+      command:
+        "sudo apt update\nsudo apt install clang g++ cmake ninja-build libx11-dev libxcursor-dev libxi-dev libxrandr-dev libgl1-mesa-dev libfontconfig1-dev",
+    },
+    {
+      title: "Fedora or RHEL family",
+      body: "Run this yourself; package availability can depend on the enabled distribution repositories.",
+      command:
+        "sudo dnf install clang gcc-c++ cmake ninja-build libX11-devel libXcursor-devel libXi-devel libXrandr-devel mesa-libGL-devel fontconfig-devel",
+    },
+    {
+      title: "Arch Linux",
+      body: "Run this yourself with the official repositories enabled.",
+      command:
+        "sudo pacman -S --needed clang gcc cmake ninja libx11 libxcursor libxi libxrandr mesa fontconfig",
+    },
+    {
+      title: "openSUSE",
+      body: "Run this yourself; let zypper resolve the matching GNU C++ and development-package versions for your release.",
+      command:
+        "sudo zypper install clang gcc-c++ cmake ninja libX11-devel libXcursor-devel libXi-devel libXrandr-devel Mesa-libGL-devel fontconfig-devel",
+    },
+    {
+      title: "Verify and check again",
+      body: "Return to Aseprite Installer after the package transaction finishes. It functionally configures, compiles, links, and runs a small C++17 test before enabling installation.",
+      command: "clang++ --version\ncmake --version\nninja --version",
+    },
+  ],
+  links: [
+    { label: "Aseprite Linux build requirements", url: ASEPRITE_INSTALL_URL },
+    { label: "CMake downloads", url: "https://cmake.org/download/" },
+    { label: "Ninja releases", url: "https://github.com/ninja-build/ninja/releases" },
+  ],
+};
+
+const linuxGuides: Record<string, PrerequisiteGuide> = {
+  nonElevated: {
+    title: "Run the installer as your normal user",
+    summary:
+      "Aseprite Installer installs only for the current user and must never run through sudo or as root.",
+    steps: [
+      {
+        title: "Close the root copy",
+        body: "Quit this window. Do not use sudo to launch the AppImage or installed application.",
+      },
+      {
+        title: "Open it normally",
+        body: "Start Aseprite Installer from your desktop launcher or user terminal without sudo.",
+      },
+      {
+        title: "Repair earlier ownership if needed",
+        body: "If the requirement reports root-owned files from an earlier launch, ask an administrator to restore ownership only for those exact paths, then check again.",
+      },
+    ],
+    links: [{ label: "Aseprite build requirements", url: ASEPRITE_INSTALL_URL }],
+  },
+  linux: {
+    title: "Use a supported Linux desktop baseline",
+    summary:
+      "The packaged GUI targets x86_64 Linux desktops at least as recent as Ubuntu 22.04 or Debian 12, including a compatible WebKitGTK 4.1 runtime.",
+    steps: [
+      {
+        title: "Check the distribution",
+        body: "Review /etc/os-release and your desktop package updates. Fedora, Arch, and openSUSE rolling/current releases can work when the functional checks pass.",
+        command: "cat /etc/os-release",
+      },
+      {
+        title: "Update through your administrator policy",
+        body: "Use your distribution’s normal supported upgrade path. Aseprite Installer does not run system-package or sudo commands automatically.",
+      },
+      {
+        title: "Ubuntu 20.04",
+        body: "The current Tauri GUI baseline cannot support Ubuntu 20.04 reliably. Follow the tracked shared-engine CLI feature request instead of forcing newer system libraries into an LTS installation.",
+      },
+    ],
+    links: [
+      { label: "Ubuntu 20.04 CLI feature request", url: "https://github.com/fmhun/aseprite-installer/issues/4" },
+      { label: "Aseprite build requirements", url: ASEPRITE_INSTALL_URL },
+    ],
+  },
+  architecture: {
+    title: "Use native Linux x86_64",
+    summary:
+      "The verified upstream Linux Skia archive and packaged installer target native x86_64. Linux ARM and emulated build environments are not supported.",
+    steps: [
+      { title: "Check the machine", body: "This command must report x86_64.", command: "uname -m" },
+      {
+        title: "Use a native system",
+        body: "Open the x86_64 installer on a native x86_64 Linux desktop, then check again.",
+      },
+    ],
+    links: [{ label: "Aseprite build requirements", url: ASEPRITE_INSTALL_URL }],
+  },
+  clang: linuxPackagesGuide,
+  cmake: linuxPackagesGuide,
+  ninja: linuxPackagesGuide,
+  toolchain: linuxPackagesGuide,
+  workspace: {
+    title: "Use a writable local workspace",
+    summary:
+      "The build cache must support normal user writes, executable files, durable sync, and atomic renames on a local filesystem.",
+    steps: [
+      {
+        title: "Review the reported path",
+        body: "Avoid root-owned, read-only, noexec, network, FUSE, or sandbox-restricted build folders. Keep the default XDG user cache when possible.",
+      },
+      {
+        title: "Restore exact access",
+        body: "Correct only the reported path through your normal administrator policy. Do not launch Aseprite Installer with sudo.",
+      },
+      { title: "Check again", body: "Rerun the full workspace probe after the filesystem or permissions change." },
+    ],
+    links: [{ label: "Aseprite build requirements", url: ASEPRITE_INSTALL_URL }],
+  },
+  destination: {
+    title: "Choose a writable executable destination",
+    summary:
+      "The installation folder must be local, user-writable, executable, and able to perform collision-safe atomic renames for rollback.",
+    steps: [
+      {
+        title: "Prefer the displayed XDG user location",
+        body: "Keep personal builds under the default user data location. Leave system, Flatpak, Snap, Steam, and package-manager copies under their original channel.",
+      },
+      {
+        title: "Check mount options",
+        body: "If the exact path is on a noexec or read-only mount, choose a normal local user filesystem rather than changing a system-wide mount casually.",
+      },
+      { title: "Check again", body: "Rerun the destination probe; no reboot is normally required." },
+    ],
+    links: [{ label: "Aseprite build requirements", url: ASEPRITE_INSTALL_URL }],
+  },
+  executableDestination: {
+    title: "Allow executables in the destination",
+    summary:
+      "The selected destination is writable but does not currently permit the functional executable probe to run.",
+    steps: [
+      {
+        title: "Use a local executable user folder",
+        body: "Choose the default XDG user installation location on a normal local filesystem. Do not disable SELinux or AppArmor globally.",
+      },
+      {
+        title: "Review policy safely",
+        body: "If a security policy blocks the reported probe, ask your administrator to approve the exact application path.",
+      },
+      { title: "Check again", body: "Rerun the probe after changing the path or policy." },
+    ],
+    links: [{ label: "Aseprite build requirements", url: ASEPRITE_INSTALL_URL }],
+  },
+  asepriteClosed: {
+    title: "Close the selected Aseprite copy",
+    summary:
+      "Save your work and close only the Aseprite executable selected for replacement before the transactional install begins.",
+    steps: [
+      { title: "Save and quit", body: "Save open sprites, then exit the selected Aseprite process normally." },
+      {
+        title: "Check the reported process",
+        body: "If it remains detected, use your desktop system monitor to close only the process whose executable matches the reported installation path.",
+      },
+      { title: "Check again", body: "No session restart is normally required." },
+    ],
+    links: [{ label: "Aseprite build requirements", url: ASEPRITE_INSTALL_URL }],
+  },
+  disk: {
+    ...guides.disk,
+    steps: [
+      {
+        title: "Review free space",
+        body: "Check the filesystem containing the displayed XDG cache path and free at least the reported safety budget.",
+        command: "df -h",
+      },
+      {
+        title: "Remove files deliberately",
+        body: "Use your desktop storage tool or package manager to review content. Aseprite Installer never deletes unrelated files or empties the Trash.",
+      },
+      { title: "Check again", body: "Rerun the requirement check after space is available." },
+    ],
+  },
+};
+
+export function getPrerequisiteGuide(
+  id: string,
+  platform: GuidePlatform = "macos",
+): PrerequisiteGuide {
+  const platformGuides =
+    platform === "windows"
+      ? windowsGuides
+      : platform === "linux"
+        ? linuxGuides
+        : guides;
+  return platformGuides[id] ?? {
     title: "Resolve this requirement",
-    summary: "Follow the requirement details below, then run the check again.",
-    steps: [],
+    summary:
+      "Follow the detected remediation for this platform, make any system change yourself, then run the check again.",
+    steps: [
+      {
+        title: "Use the detected issue",
+        body: "Review the exact requirement detail below. Aseprite Installer does not elevate itself or modify system packages automatically.",
+      },
+    ],
     links: [{ label: "Aseprite build requirements", url: ASEPRITE_INSTALL_URL }],
   };
 }

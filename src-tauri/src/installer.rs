@@ -1460,6 +1460,7 @@ async fn install_atomically(
         backup_version_exact,
         backup_bundle_fingerprint,
         backup_architecture,
+        integration_paths: Vec::new(),
     });
     if let Err(error) = state.save_managed_state(&managed) {
         let backup_rollback =

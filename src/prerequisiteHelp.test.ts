@@ -62,4 +62,24 @@ describe("prerequisite help guides", () => {
       "https://github.com/aseprite/aseprite/blob/main/INSTALL.md",
     );
   });
+
+  it("guides Windows users through Visual Studio without automatic changes", () => {
+    const guide = getPrerequisiteGuide("visualStudio", "windows");
+
+    expect(guide.summary).toContain("Windows SDK 10.0.26100.0");
+    expect(guide.summary).toContain("never changes Visual Studio");
+    expect(guide.steps.some((step) => step.body.includes("Desktop development with C++"))).toBe(true);
+    expect(guide.steps.some((step) => step.command?.includes("winget install"))).toBe(true);
+  });
+
+  it("provides opt-in commands for the major Linux package families", () => {
+    const guide = getPrerequisiteGuide("clang", "linux");
+    const commands = guide.steps.flatMap((step) => step.command ?? []);
+
+    expect(guide.summary).toContain("never runs sudo");
+    expect(commands.some((command) => command.includes("apt install"))).toBe(true);
+    expect(commands.some((command) => command.includes("dnf install"))).toBe(true);
+    expect(commands.some((command) => command.includes("pacman -S"))).toBe(true);
+    expect(commands.some((command) => command.includes("zypper install"))).toBe(true);
+  });
 });

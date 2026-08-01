@@ -32,7 +32,27 @@ pub async fn list_releases(
     cache_dir: &Path,
     include_prereleases: bool,
 ) -> AppResult<Vec<ReleaseInfo>> {
-    list_releases_from_url(client, cache_dir, include_prereleases, RELEASES_URL).await
+    let releases =
+        list_releases_from_url(client, cache_dir, include_prereleases, RELEASES_URL).await?;
+    #[cfg(any(target_os = "linux", target_os = "windows"))]
+    let releases = {
+        let mut releases = releases;
+        releases.retain(|release| portable_source_supported(&release.source_asset_name));
+        if releases.is_empty() {
+            return Err(InstallerError::new(
+                "noPortableReleases",
+                "No Aseprite source release with a pinned compatible Skia toolchain is available for this platform.",
+            ));
+        }
+        for release in &mut releases {
+            release.latest = false;
+        }
+        if let Some(latest) = releases.iter_mut().find(|release| !release.prerelease) {
+            latest.latest = true;
+        }
+        releases
+    };
+    Ok(releases)
 }
 
 async fn list_releases_from_url(
@@ -104,12 +124,12 @@ fn github_network_error(error: reqwest::Error) -> InstallerError {
     let (code, message) = if error.is_timeout() {
         (
             "networkTimeout",
-            "GitHub stopped responding before the release data arrived. Check your connection, VPN, macOS proxy, or security software, then try again.",
+            "GitHub stopped responding before the release data arrived. Check your connection, VPN, system proxy, or security software, then try again.",
         )
     } else if error.is_connect() {
         (
             "networkConnection",
-            "A secure connection to GitHub could not be established. Check DNS, VPN or proxy settings and, on a managed Mac, the corporate TLS certificate trust.",
+            "A secure connection to GitHub could not be established. Check DNS, VPN or proxy settings and, on a managed device, the corporate TLS certificate trust.",
         )
     } else if error.is_body() || error.is_decode() {
         (
@@ -253,7 +273,9 @@ impl VersionKey {
     }
 }
 
-const MINIMUM_MACOS_BUNDLE_SOURCE: [u64; 4] = [1, 3, 15, 5];
+const MINIMUM_SUPPORTED_SOURCE: [u64; 4] = [1, 3, 15, 5];
+#[cfg(any(target_os = "linux", target_os = "windows", test))]
+const MAXIMUM_PORTABLE_M124_SOURCE: [u64; 4] = [1, 3, 18, 1];
 const CMAKE_3_20: [u64; 3] = [3, 20, 0];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -269,7 +291,7 @@ pub(crate) fn source_build_requirements(
         .strip_prefix("Aseprite-")?
         .strip_suffix("-Source.zip")?;
     let version = parse_supported_version(source_version)?;
-    if version.numbers < MINIMUM_MACOS_BUNDLE_SOURCE {
+    if version.numbers < MINIMUM_SUPPORTED_SOURCE {
         return None;
     }
 
@@ -277,6 +299,13 @@ pub(crate) fn source_build_requirements(
         source_version,
         minimum_cmake_version: CMAKE_3_20,
     })
+}
+
+#[cfg(any(target_os = "linux", target_os = "windows", test))]
+pub(crate) fn portable_source_supported(source_asset_name: &str) -> bool {
+    source_build_requirements(source_asset_name)
+        .and_then(|requirements| parse_supported_version(requirements.source_version))
+        .is_some_and(|version| version.numbers <= MAXIMUM_PORTABLE_M124_SOURCE)
 }
 
 fn parse_supported_version(tag: &str) -> Option<VersionKey> {
@@ -368,6 +397,14 @@ mod tests {
             }]
         }])
         .to_string()
+    }
+
+    #[test]
+    fn portable_manifest_stops_before_an_unpinned_skia_revision() {
+        assert!(portable_source_supported("Aseprite-v1.3.15.5-Source.zip"));
+        assert!(portable_source_supported("Aseprite-v1.3.18.1-Source.zip"));
+        assert!(!portable_source_supported("Aseprite-v1.3.18.2-Source.zip"));
+        assert!(!portable_source_supported("Aseprite-v1.3.19-Source.zip"));
     }
 
     fn serve_once(body: Option<String>, delay: Duration) -> (String, thread::JoinHandle<()>) {

@@ -23,6 +23,37 @@ pub enum InstallationChannel {
     PackageManager,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum PlatformId {
+    Macos,
+    Windows,
+    Linux,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformInfo {
+    pub id: PlatformId,
+    pub display_name: String,
+    pub architecture: String,
+    pub supported: bool,
+    pub unsupported_reason: Option<String>,
+    pub default_target_path: String,
+    pub file_manager_name: String,
+    pub trash_name: String,
+    pub shell_name: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecoveryStatus {
+    pub blocked: bool,
+    pub message: Option<String>,
+    pub detail: Option<String>,
+    pub journal_path: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InstallationInfo {
@@ -70,11 +101,14 @@ pub enum OperationStage {
     Verifying,
     Extracting,
     Compiling,
+    PreparingArtifact,
     Signing,
     BackingUp,
     Installing,
+    Integrating,
     Finalizing,
     Validating,
+    RollingBack,
     Completed,
     Failed,
     Cancelled,
@@ -87,15 +121,29 @@ pub struct OperationProgress {
     pub percent: Option<u8>,
     pub message: String,
     pub log_line: Option<String>,
+    pub can_cancel: bool,
 }
 
 impl OperationProgress {
     pub fn stage(stage: OperationStage, percent: Option<u8>, message: impl Into<String>) -> Self {
+        let can_cancel = !matches!(
+            stage,
+            OperationStage::BackingUp
+                | OperationStage::Installing
+                | OperationStage::Integrating
+                | OperationStage::Finalizing
+                | OperationStage::Validating
+                | OperationStage::RollingBack
+                | OperationStage::Completed
+                | OperationStage::Failed
+                | OperationStage::Cancelled
+        );
         Self {
             stage,
             percent,
             message: message.into(),
             log_line: None,
+            can_cancel,
         }
     }
 
@@ -105,6 +153,7 @@ impl OperationProgress {
             percent: None,
             message: "Compiling Aseprite…".into(),
             log_line: Some(line.into()),
+            can_cancel: true,
         }
     }
 }
@@ -148,6 +197,8 @@ pub struct ManagedRecord {
     pub backup_bundle_fingerprint: Option<String>,
     #[serde(default)]
     pub backup_architecture: Option<String>,
+    #[serde(default)]
+    pub integration_paths: Vec<String>,
 }
 
 fn default_true() -> bool {
@@ -161,10 +212,12 @@ pub struct ManagedState {
     pub installations: Vec<ManagedRecord>,
 }
 
+pub const MANAGED_STATE_SCHEMA_VERSION: u32 = 2;
+
 impl Default for ManagedState {
     fn default() -> Self {
         Self {
-            schema_version: 2,
+            schema_version: MANAGED_STATE_SCHEMA_VERSION,
             installations: Vec::new(),
         }
     }
