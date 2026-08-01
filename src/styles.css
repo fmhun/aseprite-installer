@@ -29,6 +29,10 @@
   --accent-dark: #9a6d24;
   --blue: #6ba8ff;
   --blue-dark: #315c99;
+  --cable-idle: #252a34;
+  --cable-live: #65b8ff;
+  --cable-spark: #d8f3ff;
+  --cable-glow: rgb(101 184 255 / 45%);
   --green: #70d49c;
   --green-dark: #2a7050;
   --danger: #e36b78;
@@ -114,22 +118,39 @@ summary:focus-visible {
   position: sticky;
   bottom: 0;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 5px 8px;
+  gap: 5px;
   margin: auto 2px 0;
-  padding: 18px 8px 0;
+  padding: 13px 8px 0;
   color: var(--faint);
   font-size: var(--type-caption);
   line-height: var(--leading-caption);
   text-align: center;
 }
 
+.footer-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 5px 8px;
+}
+
 .footer-link-group {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+}
+
+.footer-disclaimer {
+  max-width: 520px;
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--type-micro);
+  line-height: var(--leading-micro);
+  text-wrap: balance;
 }
 
 .app-footer button {
@@ -390,14 +411,6 @@ summary:focus-visible {
   margin-top: 12px;
 }
 
-.unofficial-notice {
-  max-width: 430px;
-  margin: 12px 0 0;
-  color: var(--faint);
-  font-size: var(--type-caption);
-  line-height: var(--leading-caption);
-}
-
 .post-install-support {
   margin: 4px 0;
   padding: 11px;
@@ -579,8 +592,9 @@ summary:focus-visible {
 .stepper {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  margin: 0 4px 8px;
+  margin: 0 4px 10px;
   padding: 7px 0;
+  isolation: isolate;
 }
 
 .stepper > div {
@@ -594,15 +608,49 @@ summary:focus-visible {
   text-transform: uppercase;
 }
 
+.stepper > div:not(:last-child)::before,
 .stepper > div:not(:last-child)::after {
   position: absolute;
-  z-index: -1;
-  top: 10px;
+  z-index: 0;
   left: calc(50% + 12px);
   width: calc(100% - 24px);
-  height: 2px;
-  background: repeating-linear-gradient(90deg, var(--edge-mid) 0 4px, transparent 4px 7px);
   content: "";
+}
+
+.stepper > div:not(:last-child)::before {
+  top: 8px;
+  height: 6px;
+  background:
+    linear-gradient(
+      to bottom,
+      var(--edge-dark) 0 1px,
+      var(--cable-idle) 1px 3px,
+      var(--edge-mid) 3px 4px,
+      var(--edge-dark) 4px 6px
+    );
+  box-shadow: 0 2px 0 var(--shadow);
+}
+
+.stepper > div:not(:last-child)::after {
+  top: 10px;
+  height: 2px;
+  background: repeating-linear-gradient(
+    90deg,
+    var(--cable-live) 0 6px,
+    var(--cable-spark) 6px 8px,
+    var(--cable-live) 8px 14px
+  );
+  box-shadow:
+    0 0 4px var(--cable-live),
+    0 0 8px var(--cable-glow);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 480ms steps(8, end);
+}
+
+.stepper > .done:not(:last-child)::after {
+  transform: scaleX(1);
+  animation: cable-charge 480ms steps(8, end);
 }
 
 .stepper span {
@@ -623,9 +671,13 @@ summary:focus-visible {
   line-height: var(--leading-caption);
 }
 
-.stepper .current,
-.stepper .done {
-  color: var(--accent);
+.stepper .current {
+  color: var(--accent-hot);
+}
+
+.stepper .done,
+.stepper .complete {
+  color: var(--green);
 }
 
 .stepper .current span {
@@ -638,7 +690,27 @@ summary:focus-visible {
 }
 
 .stepper .done span {
-  color: var(--green);
+  color: var(--sunken);
+  background: var(--green);
+  box-shadow:
+    inset 1px 1px 0 #b3f0ce,
+    inset -1px -1px 0 var(--green-dark),
+    2px 2px 0 var(--shadow);
+}
+
+.stepper .complete span {
+  color: var(--sunken);
+  background: var(--green);
+  box-shadow:
+    inset 1px 1px 0 #b3f0ce,
+    inset -1px -1px 0 var(--green-dark),
+    0 0 7px rgb(112 212 156 / 38%),
+    2px 2px 0 var(--shadow);
+}
+
+@keyframes cable-charge {
+  from { background-position-x: -14px; }
+  to { background-position-x: 0; }
 }
 
 .flow-heading {
@@ -1422,6 +1494,10 @@ select {
     --accent-dark: #9a6a21;
     --blue: #3f79c9;
     --blue-dark: #234d86;
+    --cable-idle: #777a80;
+    --cable-live: #286fc9;
+    --cable-spark: #dff2ff;
+    --cable-glow: rgb(40 111 201 / 35%);
     --green: #52b77e;
     --green-dark: #286e4a;
     --danger: #cc5867;

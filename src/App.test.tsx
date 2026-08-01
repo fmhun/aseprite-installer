@@ -113,6 +113,12 @@ async function reachInstallConfirmation() {
   return screen.getByRole("button", { name: /^Accept and start/ });
 }
 
+function stepStates(stepper: HTMLElement): Array<string | null> {
+  return Array.from(stepper.querySelectorAll("[data-state]"), (step) =>
+    step.getAttribute("data-state"),
+  );
+}
+
 describe("Aseprite Installer contextual flow", () => {
   afterEach(cleanup);
 
@@ -137,10 +143,11 @@ describe("Aseprite Installer contextual flow", () => {
     expect(
       screen.queryByText(/SHA-256/),
     ).not.toBeInTheDocument();
-    expect(screen.getByRole("contentinfo", { name: "Project links" })).toBeInTheDocument();
+    const footer = screen.getByRole("contentinfo", { name: "Project links" });
+    expect(footer).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Buy official Aseprite — $19.99+ ↗" })).toBeInTheDocument();
     expect(screen.getByText("Recommended")).toBeInTheDocument();
-    expect(screen.getByText(/not a free edition of Aseprite/)).toBeInTheDocument();
+    expect(within(footer).getByText(/not a free edition of Aseprite/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Buy Aseprite" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Aseprite on GitHub" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Aseprite Installer on GitHub" })).toBeInTheDocument();
@@ -187,6 +194,11 @@ describe("Aseprite Installer contextual flow", () => {
     });
     fireEvent.click(installButton);
 
+    const stepper = screen.getByRole("navigation", {
+      name: "Installation steps",
+    });
+    expect(stepStates(stepper)).toEqual(["current", "upcoming", "upcoming"]);
+
     await waitFor(() => expect(api.listReleases).toHaveBeenCalledWith(false));
     expect(await screen.findByText(/SHA-256/)).toBeInTheDocument();
     expect(api.runPreflight).not.toHaveBeenCalled();
@@ -196,11 +208,44 @@ describe("Aseprite Installer contextual flow", () => {
     );
     await waitFor(() => expect(api.runPreflight).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("CMake")).toBeInTheDocument();
+    expect(stepStates(stepper)).toEqual(["done", "current", "upcoming"]);
+
+    fireEvent.click(screen.getByRole("button", { name: /Back/ }));
+    expect(stepStates(stepper)).toEqual(["current", "upcoming", "upcoming"]);
+
+    const checkAgain = await screen.findByRole("button", {
+      name: /^Check requirements/,
+    });
+    await waitFor(() => expect(checkAgain).toBeEnabled());
+    fireEvent.click(checkAgain);
+    await waitFor(() => expect(api.runPreflight).toHaveBeenCalledTimes(2));
+    expect(stepStates(stepper)).toEqual(["done", "current", "upcoming"]);
     expect(
       screen.getByRole("button", {
         name: /^Compile and install/,
       }),
     ).toBeEnabled();
+
+    vi.mocked(api.startInstall).mockRejectedValue(new Error("Build stopped"));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /^Compile and install/,
+      }),
+    );
+    fireEvent.click(
+      await screen.findByRole("checkbox", {
+        name: /I have read the Aseprite EULA/,
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /^Accept and start/,
+      }),
+    );
+    expect(stepStates(stepper)).toEqual(["done", "done", "current"]);
+
+    fireEvent.click(await screen.findByRole("button", { name: /Back/ }));
+    expect(stepStates(stepper)).toEqual(["done", "current", "upcoming"]);
   });
 
   it("shows other installations only when more than one copy is detected", async () => {
@@ -307,6 +352,11 @@ describe("Aseprite Installer contextual flow", () => {
     expect(
       await screen.findByRole("heading", { name: "Aseprite is ready" }),
     ).toBeInTheDocument();
+    expect(
+      stepStates(
+        screen.getByRole("navigation", { name: "Installation steps" }),
+      ),
+    ).toEqual(["done", "done", "complete"]);
     expect(screen.getByText(/consider buying an official copy/)).toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: "Support Aseprite development ↗" }),

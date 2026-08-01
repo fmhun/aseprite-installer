@@ -27,6 +27,8 @@ type PendingAction = {
   installation: InstallationInfo;
 };
 
+const flowSteps = ["release", "preflight", "install"] as const;
+
 const initialProgress: OperationProgress = {
   stage: "idle",
   percent: null,
@@ -143,6 +145,10 @@ function App() {
   const otherInstallations = sortedInstallations.slice(1);
   const hasMultipleInstallations = sortedInstallations.length > 1;
   const selectedRelease = releases.find((release) => release.tag === selectedTag);
+  const currentStepIndex = flowSteps.indexOf(
+    view === "status" ? "release" : view,
+  );
+  const flowComplete = view === "install" && completedInstallation !== null;
 
   const actionLabel = useMemo(() => {
     if (!flowTarget || flowTarget.channel === "manual") return t("install");
@@ -303,7 +309,7 @@ function App() {
     return (
       <main className="app-shell loading-layout">
         <LoadingIndicator label={t("checkingInstallation")} screen />
-        <AppFooter />
+        <AppFooter disclaimer={t("unofficialNotice")} />
       </main>
     );
   }
@@ -317,16 +323,26 @@ function App() {
         </div>
       </header>
 
-      {view !== "status" && view !== "install" && (
+      {view !== "status" && (
         <nav className="stepper" aria-label={t("installationSteps")}>
-          {(["release", "preflight", "install"] as const).map((step, index) => {
-            const currentIndex = ["release", "preflight", "install"].indexOf(view);
+          {flowSteps.map((step, index) => {
+            const isComplete = flowComplete && step === "install";
+            const state = isComplete
+              ? "complete"
+              : index < currentStepIndex
+                ? "done"
+                : index === currentStepIndex
+                  ? "current"
+                  : "upcoming";
             return (
               <div
-                className={`${view === step ? "current" : ""} ${index < currentIndex ? "done" : ""}`}
+                className={state}
+                data-state={state}
                 key={step}
               >
-                <span>{index + 1}</span>
+                <span aria-current={state === "current" ? "step" : undefined}>
+                  {index + 1}
+                </span>
                 <small>{t(step === "release" ? "releaseStep" : step === "preflight" ? "toolsStep" : "installStep")}</small>
               </div>
             );
@@ -462,7 +478,6 @@ function App() {
                   {t("compilePersonalCopy")} →
                 </button>
               </div>
-              <p className="unofficial-notice">{t("unofficialNotice")}</p>
               <details className="more-options">
                 <summary>{t("moreOptions")}</summary>
                 <div>
@@ -620,7 +635,7 @@ function App() {
         </section>
       )}
 
-      <AppFooter />
+      <AppFooter disclaimer={t("unofficialNotice")} />
 
       {showEula && (
         <Modal

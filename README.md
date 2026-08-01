@@ -60,13 +60,13 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-The editable SVG sources and web PNG exports live in `assets/icons/`. Regenerate the native installer icon set from the vector master with:
+The two editable SVG files in `assets/icons/` are the source of truth and must be preserved. Generated PNG, ICO and ICNS files should always be rebuilt from those masters. Regenerate the native installer icon set with:
 
 ```bash
 npm run tauri icon assets/icons/aseprite-installer.svg
 ```
 
-The installer icon uses the open-package variant. Aseprite bundles compiled and managed locally receive the loader-only variant before their ad-hoc signature is applied. Both marks use the exact four-color, dark-framed loader from the interface.
+The installer icon uses the open-package variant everywhere: native application bundle, window UI, loading screen and web favicon. Aseprite bundles compiled and managed locally receive the loader-only ICNS variant before their ad-hoc signature is applied, so macOS uses it in Finder and the Dock. Both marks use the same four-color, dark-framed loader from the interface.
 
 The stepped outer silhouette intentionally references Aseprite's familiar application shape, but the checkerboard, package, and loader artwork are project-specific. No upstream image file, GitHub logo, Octocat, or wordmark is bundled. This remains an unofficial, unaffiliated project.
 

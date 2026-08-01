@@ -9,17 +9,24 @@ const LINKS = [
   },
 ] as const;
 
-export function AppFooter() {
+interface AppFooterProps {
+  disclaimer: string;
+}
+
+export function AppFooter({ disclaimer }: AppFooterProps) {
   return (
     <footer className="app-footer" aria-label="Project links">
-      {LINKS.map((link, index) => (
-        <span className="footer-link-group" key={link.url}>
-          {index > 0 && <span className="footer-separator" aria-hidden="true">·</span>}
-          <button type="button" onClick={() => void api.openExternal(link.url)}>
-            {link.label}
-          </button>
-        </span>
-      ))}
+      <div className="footer-links">
+        {LINKS.map((link, index) => (
+          <span className="footer-link-group" key={link.url}>
+            {index > 0 && <span className="footer-separator" aria-hidden="true">·</span>}
+            <button type="button" onClick={() => void api.openExternal(link.url)}>
+              {link.label}
+            </button>
+          </span>
+        ))}
+      </div>
+      <p className="footer-disclaimer">{disclaimer}</p>
     </footer>
   );
 }
