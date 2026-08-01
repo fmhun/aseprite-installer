@@ -23,13 +23,14 @@ use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use walkdir::WalkDir;
 #[cfg(target_os = "windows")]
-use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+use windows_sys::Win32::Foundation::{ERROR_FILE_NOT_FOUND, INVALID_HANDLE_VALUE};
 #[cfg(target_os = "windows")]
 use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, FileRenameInfo, GetFileInformationByHandle, GetFinalPathNameByHandleW,
-    SetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, DELETE, FILE_ATTRIBUTE_DIRECTORY,
-    FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY, FILE_READ_ATTRIBUTES, FILE_RENAME_INFO,
-    FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+    CreateFileW, FileRenameInfo, GetFileAttributesW, GetFileInformationByHandle,
+    GetFinalPathNameByHandleW, SetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, DELETE,
+    FILE_ATTRIBUTE_DIRECTORY, FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY,
+    FILE_READ_ATTRIBUTES, FILE_RENAME_INFO, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    INVALID_FILE_ATTRIBUTES, OPEN_EXISTING,
 };
 
 pub(crate) const PORTABLE_JOURNAL_SCHEMA_VERSION: u32 = 2;
@@ -409,33 +410,23 @@ fn durable_rename_no_replace_kind(
     validate_directory_chain(source_parent).map_err(|error| {
         installer_error_context("validating the transaction parent before inspection", error)
     })?;
-    match std::fs::symlink_metadata(destination) {
-        Ok(_) => {
-            return Err(InstallerError::with_detail(
-                "transactionCollision",
-                "A no-replace transaction destination is already occupied.",
-                destination.display().to_string(),
-            ))
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => {
-            return Err(installer_error_context(
-                "checking whether the transaction destination is occupied",
-                error.into(),
-            ))
-        }
+    if transaction_destination_is_occupied(destination).map_err(|error| {
+        installer_error_context(
+            "checking whether the transaction destination is occupied",
+            error.into(),
+        )
+    })? {
+        return Err(InstallerError::with_detail(
+            "transactionCollision",
+            "A no-replace transaction destination is already occupied.",
+            destination.display().to_string(),
+        ));
     }
-    let metadata = std::fs::symlink_metadata(source).map_err(|error| {
-        installer_error_context("inspecting the transaction source", error.into())
-    })?;
-    if metadata.file_type().is_symlink()
-        || metadata_is_reparse(&metadata)
-        || if directory {
-            !metadata.is_dir()
-        } else {
-            !metadata.is_file()
-        }
-    {
+    let source_is_valid =
+        transaction_entry_matches_expected_type(source, directory).map_err(|error| {
+            installer_error_context("inspecting the transaction source", error.into())
+        })?;
+    if !source_is_valid {
         return Err(InstallerError::with_detail(
             "transactionType",
             "Only a real transaction entry of the expected type can be activated.",
@@ -454,17 +445,11 @@ fn durable_rename_no_replace_kind(
     validate_directory_chain(source_parent).map_err(|error| {
         installer_error_context("revalidating the transaction parent after rename", error)
     })?;
-    let activated = std::fs::symlink_metadata(destination).map_err(|error| {
-        installer_error_context("inspecting the activated transaction entry", error.into())
-    })?;
-    if activated.file_type().is_symlink()
-        || metadata_is_reparse(&activated)
-        || if directory {
-            !activated.is_dir()
-        } else {
-            !activated.is_file()
-        }
-    {
+    let activated_is_valid = transaction_entry_matches_expected_type(destination, directory)
+        .map_err(|error| {
+            installer_error_context("inspecting the activated transaction entry", error.into())
+        })?;
+    if !activated_is_valid {
         return Err(InstallerError::with_detail(
             "transactionType",
             "The activated transaction entry changed type across its rename.",
@@ -474,6 +459,43 @@ fn durable_rename_no_replace_kind(
     sync_directory(source_parent)
         .map_err(|error| installer_error_context("syncing the transaction parent", error))?;
     Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn transaction_destination_is_occupied(path: &Path) -> std::io::Result<bool> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn transaction_destination_is_occupied(path: &Path) -> std::io::Result<bool> {
+    match windows_path_attributes(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.raw_os_error() == Some(ERROR_FILE_NOT_FOUND as i32) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn transaction_entry_matches_expected_type(path: &Path, directory: bool) -> std::io::Result<bool> {
+    let metadata = std::fs::symlink_metadata(path)?;
+    Ok(!metadata.file_type().is_symlink()
+        && !metadata_is_reparse(&metadata)
+        && if directory {
+            metadata.is_dir()
+        } else {
+            metadata.is_file()
+        })
+}
+
+#[cfg(target_os = "windows")]
+fn transaction_entry_matches_expected_type(path: &Path, directory: bool) -> std::io::Result<bool> {
+    let attributes = windows_path_attributes(path)?;
+    Ok(attributes & FILE_ATTRIBUTE_REPARSE_POINT == 0
+        && (attributes & FILE_ATTRIBUTE_DIRECTORY != 0) == directory)
 }
 
 fn installer_error_context(stage: &str, mut error: InstallerError) -> InstallerError {
@@ -502,6 +524,7 @@ fn validate_absolute_normal_path(path: &Path) -> AppResult<()> {
     Ok(())
 }
 
+#[cfg(not(target_os = "windows"))]
 fn validate_directory_chain(path: &Path) -> AppResult<()> {
     validate_absolute_normal_path(path)?;
     let mut current = PathBuf::new();
@@ -512,6 +535,33 @@ fn validate_directory_chain(path: &Path) -> AppResult<()> {
         }
         let metadata = std::fs::symlink_metadata(&current)?;
         if metadata.file_type().is_symlink() || metadata_is_reparse(&metadata) || !metadata.is_dir()
+        {
+            return Err(InstallerError::with_detail(
+                "transactionParentLink",
+                "A transaction directory chain contains a link, junction, or non-directory.",
+                current.display().to_string(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn validate_directory_chain(path: &Path) -> AppResult<()> {
+    validate_absolute_normal_path(path)?;
+
+    // Rust's Windows metadata query can return ERROR_INVALID_FUNCTION for a
+    // valid drive root on some volumes. GetFileAttributesW is the documented
+    // path-level primitive for this audit and reports a link's own reparse bit.
+    let mut current = PathBuf::new();
+    for component in path.components() {
+        current.push(component.as_os_str());
+        if !current.is_absolute() {
+            continue;
+        }
+        let attributes = windows_path_attributes(&current)?;
+        if attributes & FILE_ATTRIBUTE_REPARSE_POINT != 0
+            || attributes & FILE_ATTRIBUTE_DIRECTORY == 0
         {
             return Err(InstallerError::with_detail(
                 "transactionParentLink",
@@ -935,6 +985,17 @@ fn open_windows_rename_handle(path: &Path, access: u32) -> std::io::Result<Owned
 }
 
 #[cfg(target_os = "windows")]
+fn windows_path_attributes(path: &Path) -> std::io::Result<u32> {
+    let path = wide(path);
+    let attributes = unsafe { GetFileAttributesW(path.as_ptr()) };
+    if attributes == INVALID_FILE_ATTRIBUTES {
+        Err(std::io::Error::last_os_error())
+    } else {
+        Ok(attributes)
+    }
+}
+
+#[cfg(target_os = "windows")]
 fn validate_windows_handle_type(handle: &OwnedHandle, directory: bool) -> std::io::Result<()> {
     let mut information = BY_HANDLE_FILE_INFORMATION::default();
     let inspected =
@@ -1165,6 +1226,28 @@ mod tests {
         assert_eq!(collision.code, "transactionCollision");
         assert_eq!(std::fs::read(&second_source).unwrap(), b"must survive");
         assert_eq!(std::fs::read(&destination).unwrap(), b"transaction proof");
+    }
+
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_transaction_path_probes_preserve_type_and_missing_path_semantics() {
+        let directory = tempfile::tempdir().unwrap();
+        let directory_path = std::fs::canonicalize(directory.path()).unwrap();
+        let file = directory_path.join("entry.json");
+        std::fs::write(&file, b"transaction proof").unwrap();
+
+        validate_directory_chain(&directory_path).unwrap();
+        assert!(transaction_entry_matches_expected_type(&directory_path, true).unwrap());
+        assert!(!transaction_entry_matches_expected_type(&directory_path, false).unwrap());
+        assert!(transaction_entry_matches_expected_type(&file, false).unwrap());
+        assert!(!transaction_entry_matches_expected_type(&file, true).unwrap());
+        assert!(transaction_destination_is_occupied(&directory_path).unwrap());
+        assert!(transaction_destination_is_occupied(&file).unwrap());
+        assert!(!transaction_destination_is_occupied(&directory_path.join("missing")).unwrap());
+        assert!(transaction_destination_is_occupied(
+            &directory_path.join("missing-parent").join("entry")
+        )
+        .is_err());
     }
 
     #[test]
