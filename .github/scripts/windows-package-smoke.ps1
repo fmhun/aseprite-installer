@@ -337,7 +337,7 @@ function Get-MsiSingleValue {
   $extraRecord = $null
   try {
     $view = $Database.OpenView($Query)
-    $view.Execute()
+    [void]$view.Execute()
     $record = $view.Fetch()
     if ($null -eq $record) {
       Fail "MSI metadata is missing $Description."
@@ -355,7 +355,7 @@ function Get-MsiSingleValue {
     Release-ComObject $extraRecord
     Release-ComObject $record
     if ($null -ne $view) {
-      try { $view.Close() } catch { Write-Warning $_.Exception.Message }
+      try { [void]$view.Close() } catch { Write-Warning $_.Exception.Message }
     }
     Release-ComObject $view
   }
@@ -392,13 +392,13 @@ function Get-MsiMetadata {
 
     $componentKeys = [Collections.Generic.List[string]]::new()
     $view = $database.OpenView('SELECT `Component_`, `FileName` FROM `File`')
-    $view.Execute()
+    [void]$view.Execute()
     while ($null -ne ($record = $view.Fetch())) {
       try {
         $msiFileName = [string]$record.StringData(2)
         $longFileName = ($msiFileName -split '\|')[-1]
         if ($longFileName -ieq $ExpectedExecutableName) {
-          $componentKeys.Add([string]$record.StringData(1))
+          [void]$componentKeys.Add([string]$record.StringData(1))
         }
       } finally {
         Release-ComObject $record
@@ -423,7 +423,7 @@ function Get-MsiMetadata {
   } finally {
     Release-ComObject $record
     if ($null -ne $view) {
-      try { $view.Close() } catch { Write-Warning $_.Exception.Message }
+      try { [void]$view.Close() } catch { Write-Warning $_.Exception.Message }
     }
     Release-ComObject $view
     Release-ComObject $summaryInformation
