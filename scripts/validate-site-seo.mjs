@@ -15,11 +15,12 @@ function occurrences(value, pattern) {
   return [...value.matchAll(pattern)].length;
 }
 
-const [html, robots, sitemap, htmlStats] = await Promise.all([
+const [html, robots, sitemap, htmlStats, sourceStyles] = await Promise.all([
   readFile(join(outputDirectory, "index.html"), "utf8"),
   readFile(join(outputDirectory, "robots.txt"), "utf8"),
   readFile(join(outputDirectory, "sitemap.xml"), "utf8"),
   stat(join(outputDirectory, "index.html")),
+  readFile(join(repositoryRoot, "site/src/styles.css"), "utf8"),
 ]);
 
 invariant(htmlStats.size < 150_000, "the initial HTML exceeds the 150 KB crawl budget");
@@ -49,6 +50,10 @@ invariant(html.includes('property="og:image:width" content="1200"'), "the Open G
 invariant(html.includes('property="og:image:height" content="630"'), "the Open Graph image height is missing");
 invariant(html.includes('name="twitter:card" content="summary_large_image"'), "the X card metadata is incomplete");
 invariant(html.includes(`href="${basePath}favicon.svg"`), "the stable favicon URL is missing");
+invariant(html.includes('name="color-scheme" content="dark"'), "the page must advertise a dark-only color scheme");
+invariant(!html.includes('name="color-scheme" content="dark light"'), "the page still advertises a light color scheme");
+invariant(sourceStyles.includes("color-scheme: only dark;"), "the stylesheet must force the dark color scheme");
+invariant(!sourceStyles.includes("@media (prefers-color-scheme: light)"), "the stylesheet still contains a system light-theme override");
 
 const structuredDataSource = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/)?.[1];
 invariant(Boolean(structuredDataSource), "JSON-LD structured data is missing");
