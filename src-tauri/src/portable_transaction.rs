@@ -839,11 +839,9 @@ fn platform_rename_no_replace(
         .map_err(|error| windows_io_context("opening the transaction parent", error))?;
     validate_windows_handle_type(&parent_handle, true)
         .map_err(|error| windows_io_context("validating the transaction parent", error))?;
-    let actual_parent = normalize_windows_handle_path(
-        windows_final_path(&parent_handle)
-            .map_err(|error| windows_io_context("resolving the transaction parent", error))?
-            .as_os_str(),
-    );
+    let final_parent = windows_final_path(&parent_handle)
+        .map_err(|error| windows_io_context("resolving the transaction parent", error))?;
+    let actual_parent = normalize_windows_handle_path(final_parent.as_os_str());
     if actual_parent != expected_parent {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -872,10 +870,15 @@ fn platform_rename_no_replace(
         ));
     }
 
-    // Resolve a simple basename relative to the verified parent handle. An
-    // absolute path would reopen every lexical ancestor and reintroduce a
-    // path-swap race after validation.
-    let destination_name = destination_name.encode_wide().collect::<Vec<_>>();
+    // SetFileInformationByHandle's Win32 FileRenameInfo implementation rejects
+    // a non-NULL RootDirectory on supported older systems. Build the required
+    // absolute destination from the verified parent handle instead of the
+    // process CWD or an unchecked lexical spelling.
+    let canonical_destination = PathBuf::from(final_parent).join(destination_name);
+    let destination_name = canonical_destination
+        .as_os_str()
+        .encode_wide()
+        .collect::<Vec<_>>();
     if destination_name.is_empty()
         || destination_name.len() > (u32::MAX as usize / std::mem::size_of::<u16>())
     {
@@ -909,16 +912,16 @@ fn platform_rename_no_replace(
     let mut rename_buffer = vec![0_usize; words];
     let rename_info = rename_buffer.as_mut_ptr().cast::<FILE_RENAME_INFO>();
     unsafe {
-        // RootDirectory binds the relative name to the already verified parent
-        // instead of the process's current drive. ReplaceIfExists = false stays
-        // a kernel-enforced atomic no-replace operation. The corrected full
-        // buffer size above is required even though FILE_RENAME_INFO declares
-        // a trailing FileName[1]. WRITE_THROUGH is optional durability/cache
-        // behavior rather than part of atomic no-replace semantics, so it is
-        // omitted for cross-file-system compatibility. The durable transaction
-        // journal provides recovery if a metadata update is interrupted.
+        // The verified parent and source handles remain open without delete
+        // sharing until the call completes. ReplaceIfExists = false stays a
+        // kernel-enforced atomic no-replace operation. The corrected full buffer
+        // size above is required even though FILE_RENAME_INFO declares a trailing
+        // FileName[1]. WRITE_THROUGH is optional durability/cache behavior rather
+        // than part of atomic no-replace semantics, so it is omitted for cross-
+        // file-system compatibility. The durable journal provides recovery if a
+        // metadata update is interrupted.
         (*rename_info).Anonymous.ReplaceIfExists = false;
-        (*rename_info).RootDirectory = parent_handle.as_raw_handle() as _;
+        (*rename_info).RootDirectory = std::ptr::null_mut();
         (*rename_info).FileNameLength = name_bytes as u32;
         std::ptr::copy_nonoverlapping(
             destination_name.as_ptr(),
