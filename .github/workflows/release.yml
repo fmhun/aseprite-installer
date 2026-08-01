@@ -219,8 +219,8 @@ jobs:
           codesign -dv --verbose=4 "$app_path" 2>&1 | grep 'Signature=adhoc' >/dev/null
           executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
           executable_path="$app_path/Contents/MacOS/$executable_name"
-          lipo -verify_arch "$EXPECTED_ARCH" "$executable_path"
-          if [[ "$(lipo -archs "$executable_path")" != "$EXPECTED_ARCH" ]]; then
+          lipo "$executable_path" -verify_arch "$EXPECTED_ARCH"
+          if [[ "$(lipo "$executable_path" -archs)" != "$EXPECTED_ARCH" ]]; then
             echo "The macOS executable contains an unexpected architecture." >&2
             exit 1
           fi

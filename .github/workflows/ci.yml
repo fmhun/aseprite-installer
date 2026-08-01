@@ -139,7 +139,7 @@ jobs:
           test "${#dmg_files[@]}" -eq 1
           codesign --verify --deep --strict --verbose=2 "$app_path"
           executable_name="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app_path/Contents/Info.plist")"
-          lipo -verify_arch "$EXPECTED_ARCH" "$app_path/Contents/MacOS/$executable_name"
+          lipo "$app_path/Contents/MacOS/$executable_name" -verify_arch "$EXPECTED_ARCH"
           if find "$app_path" \( -name 'Aseprite.app' -o -name 'aseprite' -o -name 'aseprite.exe' -o -iname 'Aseprite-v*-Source.zip' -o -iname 'Skia-*-Release-*.zip' -o -iname 'libskia*' -o -iname 'skia.lib' -o -iname 'skia.dll' -o -iname 'icudtl.dat' \) -print -quit | grep -q .; then
             echo "The macOS installer bundle contains a forbidden upstream payload." >&2
             exit 1

@@ -5036,7 +5036,7 @@ mod tests {
         assert!(SKIA_ASSET.url.contains(SKIA_TAG));
         assert!(SKIA_ASSET.name.ends_with("-x64.zip"));
         assert_eq!(SKIA_ASSET.sha256.len(), 64);
-        assert!(SKIA_ASSET.size > 20_000_000);
+        const { assert!(SKIA_ASSET.size > 20_000_000) };
     }
 
     #[test]
