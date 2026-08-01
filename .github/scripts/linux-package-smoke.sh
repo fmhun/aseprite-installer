@@ -107,7 +107,8 @@ assert_desktop_payload() {
 
   while IFS= read -r -d '' desktop_file; do
     desktop_count=$((desktop_count + 1))
-    desktop-file-validate "$desktop_file"
+    desktop-file-validate "$desktop_file" || \
+      fail "desktop-file-validate rejected ${desktop_file#"$payload_root"/}"
     if ! grep -Eq '^Exec=(/usr/bin/)?aseprite-installer([[:space:]]|$)' "$desktop_file"; then
       fail "desktop launcher does not execute aseprite-installer directly: ${desktop_file#"$payload_root"/}"
     fi
@@ -176,7 +177,8 @@ verify_deb() {
   done
   [[ -f "$control_root/md5sums" ]] || fail "deb is missing its payload checksum manifest"
   dpkg-deb --extract "$deb" "$payload_root"
-  (cd "$payload_root" && md5sum --check "$control_root/md5sums")
+  (cd "$payload_root" && md5sum --check "$control_root/md5sums") || \
+    fail "deb payload checksum validation failed"
   assert_application_tree "$payload_root"
 }
 
@@ -186,12 +188,24 @@ verify_rpm() {
   [[ -f "$rpm_path" && ! -L "$rpm_path" ]] || fail "rpm must be one regular file"
 
   local package_name architecture dependencies scripts triggers signature_info
-  package_name="$(rpm --query --package --queryformat '%{NAME}' "$rpm_path")"
-  architecture="$(rpm --query --package --queryformat '%{ARCH}' "$rpm_path")"
-  dependencies="$(rpm --query --package --requires "$rpm_path")"
-  scripts="$(rpm --query --package --scripts "$rpm_path")"
-  triggers="$(rpm --query --package --triggers "$rpm_path")"
-  signature_info="$(rpm --checksig --verbose "$rpm_path")"
+  if ! package_name="$(rpm --query --package --queryformat '%{NAME}' "$rpm_path" 2>&1)"; then
+    fail "rpm package-name query failed: $package_name"
+  fi
+  if ! architecture="$(rpm --query --package --queryformat '%{ARCH}' "$rpm_path" 2>&1)"; then
+    fail "rpm architecture query failed: $architecture"
+  fi
+  if ! dependencies="$(rpm --query --package --requires "$rpm_path" 2>&1)"; then
+    fail "rpm dependency query failed: $dependencies"
+  fi
+  if ! scripts="$(rpm --query --package --scripts "$rpm_path" 2>&1)"; then
+    fail "rpm scriptlet query failed: $scripts"
+  fi
+  if ! triggers="$(rpm --query --package --triggers "$rpm_path" 2>&1)"; then
+    fail "rpm trigger query failed: $triggers"
+  fi
+  if ! signature_info="$(rpm --checksig --verbose "$rpm_path" 2>&1)"; then
+    fail "rpm digest and signature verification command failed: $signature_info"
+  fi
 
   [[ "$package_name" == "$EXPECTED_PACKAGE_NAME" ]] || fail "unexpected rpm package name: $package_name"
   [[ "$architecture" == x86_64 ]] || fail "unexpected rpm architecture: $architecture"
@@ -207,7 +221,9 @@ verify_rpm() {
 
   local payload_root="$work_root/rpm-payload"
   mkdir "$payload_root"
-  rpm2cpio "$rpm_path" | (cd "$payload_root" && cpio --extract --make-directories --quiet --no-absolute-filenames)
+  if ! rpm2cpio "$rpm_path" | (cd "$payload_root" && cpio --extract --make-directories --quiet --no-absolute-filenames); then
+    fail "rpm payload extraction failed"
+  fi
   assert_application_tree "$payload_root"
 }
 
@@ -422,8 +438,11 @@ case "$mode" in
     for command_name in cpio dbus-run-session desktop-file-validate docker dpkg-deb file find git md5sum readelf realpath rpm rpm2cpio setsid sudo timeout Xvfb xdotool; do
       require_command "$command_name"
     done
+    echo "Verifying the AppImage payload..."
     verify_appimage "$1"
+    echo "Verifying the deb payload..."
     verify_deb "$2"
+    echo "Verifying the rpm payload..."
     verify_rpm "$3"
     smoke_appimage "$1"
     smoke_deb "$(realpath "$2")"
