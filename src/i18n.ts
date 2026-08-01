@@ -30,6 +30,10 @@ const messages = {
   installSeparateCopy: "Install a separate copy",
   manualStatusHint:
     "This copy was installed manually. It can be adopted safely before replacement.",
+  manualReadOnlyHint:
+    "This manual copy cannot be replaced by the current account. Install a separate managed copy in ~/Applications.",
+  managedReadOnlyHint:
+    "This managed copy is no longer writable by the current account. Install a separate copy or restore its permissions outside the installer.",
   moreOptions: "More options",
   otherInstallations: "Other detected installations ({count})",
   back: "Back",
@@ -40,11 +44,12 @@ const messages = {
   continueToChecks: "Check requirements",
   checkToolsTitle: "Check build requirements",
   checkToolsBody:
-    "Everything below is required before Aseprite can be compiled locally.",
+    "Blocking checks must pass. Differences from Aseprite’s documented tested baseline are warnings when the functional build test succeeds.",
   checkingTools: "Checking requirements…",
   fixRequirements: "Resolve the missing requirements to continue.",
   checkAgain: "Check again",
-  installManually: "Install manually",
+  resolveRequirement: "How to resolve",
+  reviewWarning: "Why this warning?",
   installingTitle: "Compiling and installing Aseprite",
   preparingBuild: "Preparing the build…",
   installComplete: "Aseprite is ready",
@@ -65,6 +70,7 @@ const messages = {
   latest: "Latest",
   beta: "Pre-release",
   selectRelease: "Select a release",
+  releaseTag: "GitHub tag {tag}",
   installTools: "Install CMake and Ninja with Homebrew",
   install: "Compile and install",
   update: "Compile update",
@@ -99,6 +105,7 @@ const messages = {
   restoring: "Restoring…",
   uninstalling: "Uninstalling…",
   installingTools: "Installing build tools…",
+  cancelToolInstall: "Cancel Homebrew installation",
   externalReadOnly:
     "This installation is managed by its original channel and is read-only here.",
   adoptionTitle: "Adopt manual installation",

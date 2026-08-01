@@ -73,6 +73,7 @@ pub enum OperationStage {
     Signing,
     BackingUp,
     Installing,
+    Finalizing,
     Validating,
     Completed,
     Failed,
@@ -123,20 +124,30 @@ pub struct ManagedRecord {
     pub id: String,
     pub path: String,
     pub tag: String,
+    #[serde(default)]
+    pub source_version: Option<String>,
     #[serde(default = "default_true")]
     pub version_exact: bool,
     pub digest: String,
     pub architecture: String,
     pub installed_at: String,
+    #[serde(default)]
+    pub bundle_fingerprint: Option<String>,
     pub backup_path: Option<String>,
     #[serde(default)]
     pub backup_tag: Option<String>,
+    #[serde(default)]
+    pub backup_source_version: Option<String>,
     #[serde(default)]
     pub backup_digest: Option<String>,
     #[serde(default)]
     pub backup_installed_at: Option<String>,
     #[serde(default)]
     pub backup_version_exact: Option<bool>,
+    #[serde(default)]
+    pub backup_bundle_fingerprint: Option<String>,
+    #[serde(default)]
+    pub backup_architecture: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -153,7 +164,7 @@ pub struct ManagedState {
 impl Default for ManagedState {
     fn default() -> Self {
         Self {
-            schema_version: 1,
+            schema_version: 2,
             installations: Vec::new(),
         }
     }

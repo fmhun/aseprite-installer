@@ -7,13 +7,21 @@ import type {
   ReleaseInfo,
 } from "./types";
 
+export interface PreflightRequest {
+  tag: string;
+  targetPath: string | null;
+  adopt: boolean;
+}
+
 export const api = {
   listReleases: (includePrereleases: boolean) =>
     invoke<ReleaseInfo[]>("list_releases", { includePrereleases }),
   scanInstallations: () =>
     invoke<InstallationInfo[]>("scan_installations"),
-  runPreflight: () => invoke<PreflightReport>("run_preflight"),
-  installBuildTools: () => invoke<PreflightReport>("install_build_tools"),
+  runPreflight: (request: PreflightRequest) =>
+    invoke<PreflightReport>("run_preflight", { ...request }),
+  installBuildTools: (request: PreflightRequest) =>
+    invoke<PreflightReport>("install_build_tools", { ...request }),
   startInstall: (
     request: InstallRequest,
     onProgress: (progress: OperationProgress) => void,

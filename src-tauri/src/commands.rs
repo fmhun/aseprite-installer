@@ -4,10 +4,14 @@ use crate::models::{
     InstallRequest, InstallationChannel, InstallationInfo, OperationProgress, OperationStage,
     PreflightReport, ReleaseInfo,
 };
-use crate::platform::{MacOsAdapter, PlatformAdapter};
+use crate::platform::{MacOsAdapter, PlatformAdapter, PreflightContext};
 use crate::releases;
 use crate::state::AppState;
+use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
+use std::process::Stdio;
+use std::sync::atomic::Ordering;
+use std::time::{Duration, Instant};
 use tauri::ipc::Channel;
 use tauri::{LogicalSize, State, Window};
 use url::Url;
@@ -57,46 +61,174 @@ pub async fn list_releases(
     include_prereleases: bool,
     state: State<'_, AppState>,
 ) -> AppResult<Vec<ReleaseInfo>> {
-    releases::list_releases(&state.client, &state.paths.cache_dir, include_prereleases).await
+    let client = state.http_client()?;
+    releases::list_releases(&client, &state.paths.cache_dir, include_prereleases).await
 }
 
 #[tauri::command]
 pub async fn scan_installations(state: State<'_, AppState>) -> AppResult<Vec<InstallationInfo>> {
-    let managed = state.load_managed_state()?;
+    let managed = state
+        .load_managed_state()
+        .map_err(|error| map_plan_storage_error(error, &state.paths.registry_file))?;
     MacOsAdapter::new()
         .discover_installations(&state.paths, &managed)
         .await
 }
 
 #[tauri::command]
-pub async fn run_preflight(state: State<'_, AppState>) -> AppResult<PreflightReport> {
-    MacOsAdapter::new().preflight(&state.paths).await
+pub async fn run_preflight(
+    tag: String,
+    target_path: Option<String>,
+    adopt: bool,
+    state: State<'_, AppState>,
+) -> AppResult<PreflightReport> {
+    let request = preflight_request(tag, target_path, adopt);
+    let plan = resolve_install_plan(&state, &request).await?;
+    MacOsAdapter::new()
+        .preflight(&state.paths, &plan.preflight_context)
+        .await
 }
 
 #[tauri::command]
-pub async fn install_build_tools(state: State<'_, AppState>) -> AppResult<PreflightReport> {
-    let brew = crate::platform::macos::find_executable("brew").ok_or_else(|| {
-        InstallerError::new(
-            "homebrewMissing",
-            "Homebrew is not installed. Install CMake and Ninja from their official websites.",
-        )
-    })?;
-    let output = tokio::process::Command::new(&brew)
-        .args(["install", "cmake", "ninja"])
-        .env(
-            "PATH",
-            "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
-        )
-        .output()
-        .await?;
-    if !output.status.success() {
-        return Err(InstallerError::with_detail(
-            "homebrew",
-            "Homebrew could not install CMake and Ninja.",
-            String::from_utf8_lossy(&output.stderr).trim().to_owned(),
-        ));
+pub async fn install_build_tools(
+    tag: String,
+    target_path: Option<String>,
+    adopt: bool,
+    state: State<'_, AppState>,
+) -> AppResult<PreflightReport> {
+    let cancelled = state.begin_operation()?;
+    let result = async {
+        let request = preflight_request(tag, target_path, adopt);
+        let plan = resolve_install_plan(&state, &request).await?;
+        let brew = crate::platform::macos::usable_homebrew_path().map_err(|detail| {
+            InstallerError::with_detail(
+                "homebrewUnavailable",
+                "Homebrew is missing or cannot safely write to its own directories. Install CMake and Ninja manually, or repair Homebrew without sudo.",
+                detail,
+            )
+        })?;
+        run_homebrew_install(&state, &brew, &cancelled).await?;
+        let mut context = plan.preflight_context.clone();
+        context.operation_lock_held = true;
+        MacOsAdapter::new().preflight(&state.paths, &context).await
     }
-    MacOsAdapter::new().preflight(&state.paths).await
+    .await;
+    state.finish_operation();
+    result
+}
+
+async fn run_homebrew_install(
+    state: &AppState,
+    brew: &Path,
+    cancelled: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> AppResult<()> {
+    std::fs::create_dir_all(&state.paths.logs_dir)?;
+    let log_path = state
+        .paths
+        .logs_dir
+        .join(format!("homebrew-{}.log", uuid::Uuid::new_v4()));
+    let stdout = OpenOptions::new()
+        .create_new(true)
+        .write(true)
+        .open(&log_path)?;
+    let stderr = stdout.try_clone()?;
+    let mut child = tokio::process::Command::new(brew)
+        .args(["install", "cmake", "ninja"])
+        .env("PATH", homebrew_command_path(brew))
+        .stdout(Stdio::from(stdout))
+        .stderr(Stdio::from(stderr))
+        .process_group(0)
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|error| {
+            InstallerError::with_detail(
+                "homebrewStart",
+                "Homebrew could not be started.",
+                error.to_string(),
+            )
+        })?;
+    let process_id = child.id();
+    let started = Instant::now();
+    let status = loop {
+        if cancelled.load(Ordering::SeqCst) {
+            terminate_command_group(&mut child, process_id).await;
+            let _ = std::fs::remove_file(&log_path);
+            return Err(InstallerError::new(
+                "cancelled",
+                "The Homebrew installation was cancelled.",
+            ));
+        }
+        if started.elapsed() > Duration::from_secs(30 * 60) {
+            terminate_command_group(&mut child, process_id).await;
+            return Err(InstallerError::with_detail(
+                "homebrewTimeout",
+                "Homebrew did not finish within 30 minutes and was stopped.",
+                format!("Technical log: {}", log_path.display()),
+            ));
+        }
+        if let Some(status) = child.try_wait()? {
+            if let Some(process_id) = process_id {
+                signal_command_group(process_id, "-KILL").await;
+            }
+            break status;
+        }
+        tokio::time::sleep(Duration::from_millis(150)).await;
+    };
+    if status.success() {
+        let _ = std::fs::remove_file(&log_path);
+        return Ok(());
+    }
+    let output = std::fs::read_to_string(&log_path).unwrap_or_default();
+    Err(InstallerError::with_detail(
+        "homebrew",
+        "Homebrew could not install CMake and Ninja. Do not retry it with sudo.",
+        format!(
+            "{}\nTechnical log: {}",
+            tail_text(&output, 4_000),
+            log_path.display()
+        ),
+    ))
+}
+
+async fn terminate_command_group(child: &mut tokio::process::Child, process_id: Option<u32>) {
+    if let Some(process_id) = process_id {
+        signal_command_group(process_id, "-TERM").await;
+        for _ in 0..20 {
+            if child.try_wait().ok().flatten().is_some() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        signal_command_group(process_id, "-KILL").await;
+    }
+    let _ = child.kill().await;
+    let _ = child.wait().await;
+}
+
+async fn signal_command_group(process_id: u32, signal: &str) {
+    let group = format!("-{process_id}");
+    let _ = tokio::process::Command::new("/bin/kill")
+        .args([signal, "--", &group])
+        .status()
+        .await;
+}
+
+fn tail_text(value: &str, maximum_characters: usize) -> String {
+    let mut characters = value
+        .chars()
+        .rev()
+        .take(maximum_characters)
+        .collect::<Vec<_>>();
+    characters.reverse();
+    characters.into_iter().collect()
+}
+
+fn homebrew_command_path(brew: &Path) -> String {
+    let parent = brew.parent().unwrap_or_else(|| Path::new("/usr/local/bin"));
+    format!(
+        "{}:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        parent.display()
+    )
 }
 
 #[tauri::command]
@@ -113,26 +245,11 @@ pub async fn start_install(
     }
     let cancelled = state.begin_operation()?;
     let result = async {
-        let available = releases::list_releases(&state.client, &state.paths.cache_dir, true).await?;
-        let release = available
-            .iter()
-            .find(|release| release.tag == request.tag)
-            .ok_or_else(|| {
-                InstallerError::new(
-                    "unsupportedRelease",
-                    "The selected Aseprite release is not supported or has no verified source archive.",
-                )
-            })?;
+        let plan = resolve_install_plan(&state, &request).await?;
         let adapter = MacOsAdapter::new();
-        let managed = state.load_managed_state()?;
-        let installations = adapter
-            .discover_installations(&state.paths, &managed)
-            .await?;
-        let default_target = adapter.default_target()?;
-        let (target, existing) =
-            resolve_target(&request, default_target, &installations)?;
-
-        let preflight = adapter.preflight(&state.paths).await?;
+        let mut context = plan.preflight_context.clone();
+        context.operation_lock_held = true;
+        let preflight = adapter.preflight(&state.paths, &context).await?;
         if !preflight.ready {
             return Err(InstallerError::new(
                 "preflightFailed",
@@ -141,9 +258,9 @@ pub async fn start_install(
         }
         installer::install_release(
             &state,
-            release,
-            &target,
-            existing.as_ref(),
+            &plan.release,
+            &plan.target,
+            plan.existing.as_ref(),
             cancelled,
             &progress,
         )
@@ -163,6 +280,82 @@ pub async fn start_install(
     result
 }
 
+struct ResolvedInstallPlan {
+    release: ReleaseInfo,
+    target: PathBuf,
+    existing: Option<InstallationInfo>,
+    preflight_context: PreflightContext,
+}
+
+fn preflight_request(tag: String, target_path: Option<String>, adopt: bool) -> InstallRequest {
+    InstallRequest {
+        tag,
+        target_path,
+        adopt,
+        eula_accepted: false,
+    }
+}
+
+async fn resolve_install_plan(
+    state: &AppState,
+    request: &InstallRequest,
+) -> AppResult<ResolvedInstallPlan> {
+    let client = state.http_client()?;
+    let available = releases::list_releases(&client, &state.paths.cache_dir, true).await?;
+    let release = available
+        .into_iter()
+        .find(|release| release.tag == request.tag)
+        .ok_or_else(unsupported_release_error)?;
+    let adapter = MacOsAdapter::new();
+    let managed = state
+        .load_managed_state()
+        .map_err(|error| map_plan_storage_error(error, &state.paths.registry_file))?;
+    let installations = adapter
+        .discover_installations(&state.paths, &managed)
+        .await?;
+    let default_target = adapter.default_target()?;
+    let (target, existing) = resolve_target(request, default_target, &installations)?;
+    let preflight_context = build_preflight_context(&release, target.clone())?;
+
+    Ok(ResolvedInstallPlan {
+        release,
+        target,
+        existing,
+        preflight_context,
+    })
+}
+
+fn map_plan_storage_error(error: InstallerError, registry_file: &Path) -> InstallerError {
+    if error.code != "io" {
+        return error;
+    }
+    let detail = error
+        .detail
+        .unwrap_or_else(|| "The registry could not be read.".into());
+    InstallerError::with_detail(
+        "workspaceStorage",
+        "The installer state could not be read before checking requirements. Restore read/write access to the installer data folder and do not run the installer with sudo.",
+        format!("{}: {detail}", registry_file.display()),
+    )
+}
+
+fn build_preflight_context(release: &ReleaseInfo, target: PathBuf) -> AppResult<PreflightContext> {
+    let requirements = releases::source_build_requirements(&release.source_asset_name)
+        .ok_or_else(unsupported_release_error)?;
+    Ok(PreflightContext {
+        target,
+        minimum_cmake_version: requirements.minimum_cmake_version,
+        operation_lock_held: false,
+    })
+}
+
+fn unsupported_release_error() -> InstallerError {
+    InstallerError::new(
+        "unsupportedRelease",
+        "The selected Aseprite release is not supported or has no verified source archive.",
+    )
+}
+
 fn resolve_target(
     request: &InstallRequest,
     default_target: PathBuf,
@@ -179,6 +372,7 @@ fn resolve_target(
                 "Adopt the existing manual copy before replacing it.",
             ));
         }
+        ensure_unclaimed_target_is_empty(&default_target, existing.as_ref())?;
         return Ok((default_target, existing));
     };
 
@@ -203,6 +397,7 @@ fn resolve_target(
                         "The managed ~/Applications destination already contains another Aseprite copy.",
                     ));
                 }
+                ensure_unclaimed_target_is_empty(&default_target, None)?;
                 Ok((default_target, None))
             }
         }
@@ -216,6 +411,27 @@ fn resolve_target(
                 "Steam and package-manager installations must be updated through their original channel.",
             ))
         }
+    }
+}
+
+fn ensure_unclaimed_target_is_empty(
+    target: &Path,
+    detected: Option<&InstallationInfo>,
+) -> AppResult<()> {
+    if detected.is_some() {
+        return Ok(());
+    }
+    match std::fs::symlink_metadata(target) {
+        Ok(_) => Err(InstallerError::new(
+            "defaultOccupied",
+            "The managed ~/Applications destination is occupied by an item that is not a valid detected Aseprite installation.",
+        )),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(InstallerError::with_detail(
+            "targetInspect",
+            "The managed ~/Applications destination could not be inspected safely.",
+            error.to_string(),
+        )),
     }
 }
 
@@ -315,7 +531,14 @@ fn is_allowed_external_url(url: &Url) -> bool {
             .path()
             .starts_with("/documentation/xcode/installing-the-command-line-tools"),
         Some("support.apple.com") => {
-            url.path().starts_with("/en-us/108382") || url.path().starts_with("/en-us/102624")
+            url.path().starts_with("/en-us/108382")
+                || url.path().starts_with("/en-us/102624")
+                || url
+                    .path()
+                    .starts_with("/guide/mac-help/change-proxy-settings-on-mac-mchlp2591/mac")
+                || url
+                    .path()
+                    .starts_with("/guide/disk-utility/file-system-formats-")
         }
         Some("cmake.org") => url.path().starts_with("/download"),
         Some("formulae.brew.sh") => {
@@ -382,6 +605,81 @@ mod tests {
     }
 
     #[test]
+    fn refuses_to_overwrite_an_unrecognized_default_target() {
+        let directory = tempfile::tempdir().unwrap();
+        let target = directory.path().join("Aseprite.app");
+        std::fs::write(&target, b"not an application bundle").unwrap();
+        let request = InstallRequest {
+            tag: "v1.3.18.1".into(),
+            target_path: None,
+            adopt: false,
+            eula_accepted: true,
+        };
+
+        let error = resolve_target(&request, target, &[]).unwrap_err();
+        assert_eq!(error.code, "defaultOccupied");
+    }
+
+    #[test]
+    fn preflight_context_uses_the_source_asset_version() {
+        let release = ReleaseInfo {
+            tag: "v1.3.15.4".into(),
+            name: "Aseprite v1.3.15.4".into(),
+            published_at: String::new(),
+            prerelease: false,
+            latest: false,
+            source_asset_name: "Aseprite-v1.3.15.5-Source.zip".into(),
+            source_url: "https://github.com/aseprite/aseprite/releases/download/v1.3.15.4/Aseprite-v1.3.15.5-Source.zip".into(),
+            digest: format!("sha256:{}", "a".repeat(64)),
+            size: 1,
+        };
+        let target = PathBuf::from("/Users/test/Applications/Aseprite.app");
+
+        let context = build_preflight_context(&release, target.clone()).unwrap();
+
+        assert_eq!(context.target, target);
+        assert_eq!(context.minimum_cmake_version, [3, 20, 0]);
+    }
+
+    #[test]
+    fn preflight_context_rejects_an_invalid_source_asset() {
+        let release = ReleaseInfo {
+            tag: "v1.3.18.1".into(),
+            name: "Aseprite v1.3.18.1".into(),
+            published_at: String::new(),
+            prerelease: false,
+            latest: true,
+            source_asset_name: "Aseprite-v1.2.40-Source.zip".into(),
+            source_url: "https://github.com/aseprite/aseprite/releases/download/v1.3.18.1/Aseprite-v1.2.40-Source.zip".into(),
+            digest: format!("sha256:{}", "a".repeat(64)),
+            size: 1,
+        };
+
+        assert_eq!(
+            build_preflight_context(
+                &release,
+                PathBuf::from("/Users/test/Applications/Aseprite.app")
+            )
+            .unwrap_err()
+            .code,
+            "unsupportedRelease"
+        );
+    }
+
+    #[test]
+    fn state_io_errors_keep_an_actionable_workspace_code() {
+        let path = Path::new("/Users/test/Library/Application Support/state.json");
+        let error = map_plan_storage_error(
+            InstallerError::with_detail("io", "A file operation failed.", "Permission denied"),
+            path,
+        );
+
+        assert_eq!(error.code, "workspaceStorage");
+        assert!(error.message.contains("read/write access"));
+        assert!(error.detail.as_deref().unwrap().contains("state.json"));
+    }
+
+    #[test]
     fn validates_window_height_bounds() {
         assert_eq!(validated_window_height(492.4).unwrap(), 492.0);
         assert_eq!(
@@ -403,6 +701,7 @@ mod tests {
             "https://github.com/ninja-build/ninja/releases",
             "https://developer.apple.com/documentation/xcode/installing-the-command-line-tools",
             "https://support.apple.com/en-us/102624",
+            "https://support.apple.com/guide/mac-help/change-proxy-settings-on-mac-mchlp2591/mac",
             "https://cmake.org/download/",
             "https://formulae.brew.sh/formula/cmake",
         ] {
