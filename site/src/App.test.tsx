@@ -31,16 +31,21 @@ describe("landing page", () => {
     render(<App />);
 
     expect(screen.getByRole("heading", { level: 1 })).toHaveTextContent(
-      "Build Asepritefrom source. Locally.",
+      /Install Aseprite\s*from source\./,
     );
+    expect(screen.getByText("AND FOR FREE")).toBeInTheDocument();
     const downloads = screen.getAllByRole("link", { name: /download/i });
     expect(downloads.some((link) => link.getAttribute("href")?.endsWith("Aseprite-Installer-macOS-Universal.dmg"))).toBe(true);
     expect(screen.getByRole("link", { name: /browse the code/i })).toHaveAttribute(
       "href",
       "https://github.com/fmhun/aseprite-installer",
     );
-    expect(screen.getByText(/Windows/)).toHaveTextContent("planned");
-    expect(screen.getByText(/Linux/)).toHaveTextContent("planned");
+    expect(screen.getByRole("link", { name: "FAQ" })).toHaveAttribute("href", "#faq");
+    expect(screen.queryByText("One legal check")).not.toBeInTheDocument();
+    expect(screen.queryByText("LIVE WALKTHROUGH")).not.toBeInTheDocument();
+    expect(screen.queryByText("BUILD REQUIREMENTS")).not.toBeInTheDocument();
+    expect(screen.queryByText(/Windows/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/No telemetry/)).not.toBeInTheDocument();
   });
 
   it("advances the walkthrough automatically", () => {
@@ -51,6 +56,10 @@ describe("landing page", () => {
 
     act(() => vi.advanceTimersByTime(2_500));
     expect(demo).toHaveAttribute("data-phase", "release");
+
+    act(() => vi.advanceTimersByTime(5_500));
+    expect(demo).toHaveAttribute("data-phase", "build");
+    expect(screen.queryByText("One legal check")).not.toBeInTheDocument();
   });
 
   it("holds the final frame when reduced motion is enabled", () => {

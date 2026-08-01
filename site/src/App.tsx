@@ -100,33 +100,6 @@ function PreflightScreen() {
   );
 }
 
-function EulaScreen() {
-  return (
-    <>
-      <DemoStepper current={1} />
-      <div className="demo-panel demo-flow-panel demo-panel--dimmed">
-        <div className="demo-kicker">STEP 2 OF 3</div>
-        <h3>Ready to build</h3>
-        <p>Your tools stay on your Mac.</p>
-        <ul className="demo-tool-list">
-          {tools.slice(0, 3).map(([tool, version]) => (
-            <li key={tool}><span className="demo-check">✓</span><strong>{tool}</strong><small>{version}</small></li>
-          ))}
-        </ul>
-      </div>
-      <div className="demo-modal-shade" />
-      <div className="demo-modal">
-        <div className="demo-modal-titlebar">PERSONAL BUILD / ASEPRITE <span>×</span></div>
-        <div className="demo-document">≡</div>
-        <h3>One legal check</h3>
-        <p>The source build is for your own personal use under Aseprite’s EULA.</p>
-        <div className="demo-consent"><span>✓</span> I understand and agree</div>
-        <PixelButton>Continue →</PixelButton>
-      </div>
-    </>
-  );
-}
-
 const stageCopy = {
   download: ["Downloading official source", "github.com/aseprite/aseprite"],
   verify: ["Verifying source archive", "SHA-256 digest matched"],
@@ -181,7 +154,6 @@ function ScreenForPhase({ phase, progress, buildStage }: { phase: DemoPhase; pro
   if (phase === "status") return <StatusScreen />;
   if (phase === "release") return <ReleaseScreen />;
   if (phase === "preflight") return <PreflightScreen />;
-  if (phase === "eula") return <EulaScreen />;
   if (phase === "build") return <BuildScreen progress={progress} buildStage={buildStage} />;
   return <CompleteScreen />;
 }
@@ -221,7 +193,7 @@ export function ProductDemo() {
       </div>
       <div className="demo-stand" aria-hidden="true"><span /></div>
       <figcaption id="demo-caption" className="site-sr-only">
-        The installer selects an official Aseprite release, checks local build tools, asks you to accept the upstream EULA, verifies and compiles the source, then installs your personal app in Applications.
+        The installer selects an official Aseprite release, checks local build tools, verifies and compiles the source, then installs your personal app in Applications.
       </figcaption>
     </figure>
   );
@@ -240,7 +212,7 @@ function App() {
         <nav className="site-nav" aria-label="Main navigation">
           <a href="#how-it-works">How it works</a>
           <a href="#install">Install</a>
-          <a href="#open-source">Open source</a>
+          <a href="#faq">FAQ</a>
           <a href={GITHUB_URL}>GitHub <ExternalArrow /></a>
         </nav>
         <a className="site-button site-button--small" href={DOWNLOAD_URL}>Download</a>
@@ -249,10 +221,10 @@ function App() {
       <main id="main">
         <section className="site-hero" id="top">
           <div className="site-hero-copy">
-            <p className="site-eyebrow"><span /> MADE FOR MACOS</p>
-            <h1>Build Aseprite<br />from source. <em>Locally.</em></h1>
+            <h1>Install <em>Aseprite</em><br />from source.</h1>
+            <p className="site-eyebrow site-hero-tag"><span /> AND FOR FREE</p>
             <p className="site-lead">
-              Pick an official release and turn it into your own macOS app. The installer verifies the source, compiles it on your machine, and replaces nothing until the build is ready.
+              Install an Aseprite release from the official source repository—without wrestling with the development tools required to build it. Aseprite Installer verifies the source and handles the entire compilation locally on your Mac.
             </p>
             <div className="site-hero-actions">
               <a className="site-button" href={DOWNLOAD_URL}>Download for macOS <span aria-hidden="true">↓</span></a>
@@ -262,20 +234,12 @@ function App() {
           </div>
 
           <div className="site-demo-wrap">
-            <div className="site-demo-label"><span>LIVE WALKTHROUGH</span><small>A personal build, start to finish</small></div>
             <ProductDemo />
           </div>
 
           <p className="site-unofficial">
             Unofficial and unaffiliated. This tool does not distribute Aseprite binaries or replace the official paid edition.
           </p>
-        </section>
-
-        <section className="site-trust" aria-label="Project principles">
-          <span><i>01</i> Verified source</span>
-          <span><i>02</i> Built locally</span>
-          <span><i>03</i> Safe replacement</span>
-          <span><i>04</i> No telemetry</span>
         </section>
 
         <section className="site-section site-how" id="how-it-works">
@@ -329,20 +293,13 @@ function App() {
           </div>
 
           <div className="site-requirements">
-            <strong>BUILD REQUIREMENTS</strong>
             <span>macOS 15.2+</span><span>Xcode + SDK</span><span>CMake</span><span>Ninja</span><span>~6 GB free</span>
-          </div>
-          <div className="site-platforms" aria-label="Platform availability">
-            <span><i className="site-dot site-dot--available" /> macOS <small>available</small></span>
-            <span><i /> Windows <small>planned</small></span>
-            <span><i /> Linux <small>planned</small></span>
           </div>
         </section>
 
         <section className="site-section site-source" id="open-source">
           <div>
-            <p className="site-eyebrow"><span /> OPEN SOURCE</p>
-            <h2>MIT licensed.<br /><em>Small enough to audit.</em></h2>
+            <h2>MIT licensed.<br /><em>OPEN SOURCE</em></h2>
             <p>A transparent Tauri, React, and Rust utility. No account, token, analytics, or hidden build service.</p>
           </div>
           <nav className="site-source-links" aria-label="Open source project links">
@@ -353,7 +310,7 @@ function App() {
           </nav>
         </section>
 
-        <section className="site-section site-faq">
+        <section className="site-section site-faq" id="faq">
           <div className="site-section-heading">
             <p className="site-eyebrow"><span /> FAQ</p>
             <h2>The essentials.</h2>
@@ -378,7 +335,7 @@ function App() {
       <footer className="site-footer">
         <div className="site-footer-brand">
           <img src={installerIcon} alt="" />
-          <div><strong>Aseprite Installer</strong><small>Build it where it belongs: on your Mac.</small></div>
+          <strong>Aseprite Installer</strong>
         </div>
         <div className="site-footer-links">
           <a href={BUY_URL}>Buy official Aseprite <ExternalArrow /></a>
