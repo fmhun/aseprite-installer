@@ -53,6 +53,9 @@ describe("landing page", () => {
     expect(screen.getByRole("heading", { name: "Get ready to build" })).toBeInTheDocument();
     expect(screen.getByText(/Let the installer set up CMake and Ninja through Homebrew/)).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Check your Mac" })).not.toBeInTheDocument();
+    expect(screen.getByText("A free tool developed for the Aseprite community.")).toBeInTheDocument();
+    expect(screen.getByText(/No account, token, analytics, or hidden service\./)).toBeInTheDocument();
+    expect(screen.queryByText(/hidden build service/)).not.toBeInTheDocument();
   });
 
   it("places Install before How it works in the page and navigation", () => {

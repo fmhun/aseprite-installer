@@ -1207,6 +1207,13 @@ summary:focus-visible {
   margin-top: 25px;
 }
 
+.site-source p.site-source-community {
+  margin-top: 12px;
+  color: var(--accent-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
 .site-source-links {
   display: grid;
   border-top: 2px solid var(--edge-dark);
