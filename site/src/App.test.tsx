@@ -50,6 +50,16 @@ describe("landing page", () => {
     expect(screen.getByText(/~6 GB free/)).toBeInTheDocument();
   });
 
+  it("places Install before How it works in the page and navigation", () => {
+    render(<App />);
+
+    const sectionIds = [...document.querySelectorAll("main > section")].map((section) => section.id);
+    expect(sectionIds.indexOf("install")).toBeLessThan(sectionIds.indexOf("how-it-works"));
+
+    const navLabels = [...document.querySelectorAll(".site-nav a")].map((link) => link.textContent?.trim());
+    expect(navLabels.indexOf("Install")).toBeLessThan(navLabels.indexOf("How it works"));
+  });
+
   it("advances the walkthrough automatically", () => {
     vi.useFakeTimers();
     render(<ProductDemo />);
