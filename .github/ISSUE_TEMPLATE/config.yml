@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report an Aseprite editor bug
+    url: https://github.com/aseprite/aseprite/issues/new/choose
+    about: Use the official Aseprite tracker for problems in the editor itself.
+  - name: Aseprite purchase and account support
+    url: https://www.aseprite.org/support/
+    about: Contact Igara Studio about purchases, downloads, accounts, or Steam keys.

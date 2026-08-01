@@ -399,6 +399,7 @@ mod tests {
         for url in [
             "https://www.aseprite.org/buy/",
             "https://github.com/aseprite/aseprite/blob/main/INSTALL.md",
+            "https://github.com/fmhun/aseprite-installer/issues/new/choose",
             "https://github.com/ninja-build/ninja/releases",
             "https://developer.apple.com/documentation/xcode/installing-the-command-line-tools",
             "https://support.apple.com/en-us/102624",

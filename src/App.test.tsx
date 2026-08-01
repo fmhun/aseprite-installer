@@ -151,15 +151,18 @@ describe("Aseprite Installer contextual flow", () => {
     expect(screen.getByRole("button", { name: "Buy Aseprite" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Aseprite on GitHub" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Aseprite Installer on GitHub" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Report a bug" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Buy official Aseprite — $19.99+ ↗" }));
     fireEvent.click(screen.getByRole("button", { name: "Buy Aseprite" }));
     fireEvent.click(screen.getByRole("button", { name: "Aseprite on GitHub" }));
     fireEvent.click(screen.getByRole("button", { name: "Aseprite Installer on GitHub" }));
+    fireEvent.click(screen.getByRole("button", { name: "Report a bug" }));
     expect(api.openExternal).toHaveBeenNthCalledWith(1, "https://www.aseprite.org/buy/");
     expect(api.openExternal).toHaveBeenNthCalledWith(2, "https://www.aseprite.org/buy/");
     expect(api.openExternal).toHaveBeenNthCalledWith(3, "https://github.com/aseprite/aseprite");
     expect(api.openExternal).toHaveBeenNthCalledWith(4, "https://github.com/fmhun/aseprite-installer");
+    expect(api.openExternal).toHaveBeenNthCalledWith(5, "https://github.com/fmhun/aseprite-installer/issues/new/choose");
   });
 
   it("shows a minimal installed state before entering the reinstall flow", async () => {

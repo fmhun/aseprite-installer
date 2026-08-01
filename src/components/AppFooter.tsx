@@ -7,6 +7,10 @@ const LINKS = [
     label: "Aseprite Installer on GitHub",
     url: "https://github.com/fmhun/aseprite-installer",
   },
+  {
+    label: "Report a bug",
+    url: "https://github.com/fmhun/aseprite-installer/issues/new/choose",
+  },
 ] as const;
 
 interface AppFooterProps {

@@ -1,0 +1,64 @@
+name: Feature request
+description: Suggest an improvement or a new capability for Aseprite Installer
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement. Please focus on the problem and the user benefit before describing a specific implementation.
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues and did not find an equivalent request.
+          required: true
+        - label: This request is about Aseprite Installer, not the Aseprite editor.
+          required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case
+      description: What are you trying to accomplish, and what currently makes it difficult?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior you would like to see.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Affected area
+      options:
+        - Interface or accessibility
+        - Release selection
+        - Requirements or build tools
+        - Download or verification
+        - Compilation
+        - Installation management
+        - Platform support
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: Describe any workaround or alternative approach you have tried.
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional context or mockups
+      description: Drag screenshots or mockups here and add any other useful context.
