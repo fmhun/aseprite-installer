@@ -3,21 +3,11 @@ import { DEMO_DURATION, getDemoFrame } from "./demo";
 
 const MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 
-function initialReducedMotion(): boolean {
-  return typeof window !== "undefined" &&
-    typeof window.matchMedia === "function" &&
-    window.matchMedia(MOTION_QUERY).matches;
-}
-
 export function useDemoPlayback(containerRef: RefObject<HTMLElement | null>) {
   const [elapsed, setElapsed] = useState(0);
-  const [inViewport, setInViewport] = useState(
-    () => typeof window === "undefined" || !("IntersectionObserver" in window),
-  );
-  const [pageVisible, setPageVisible] = useState(
-    () => typeof document === "undefined" || document.visibilityState !== "hidden",
-  );
-  const [reducedMotion, setReducedMotion] = useState(initialReducedMotion);
+  const [inViewport, setInViewport] = useState(false);
+  const [pageVisible, setPageVisible] = useState(true);
+  const [reducedMotion, setReducedMotion] = useState(false);
 
   useEffect(() => {
     if (typeof window.matchMedia !== "function") return;
@@ -30,6 +20,7 @@ export function useDemoPlayback(containerRef: RefObject<HTMLElement | null>) {
 
   useEffect(() => {
     const updateVisibility = () => setPageVisible(document.visibilityState !== "hidden");
+    updateVisibility();
     document.addEventListener("visibilitychange", updateVisibility);
     return () => document.removeEventListener("visibilitychange", updateVisibility);
   }, []);
