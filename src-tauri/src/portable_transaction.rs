@@ -764,8 +764,8 @@ fn platform_rename_no_replace(
     let parent_handle =
         open_windows_rename_handle(parent, FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES, false)?;
     validate_windows_handle_type(&parent_handle, true)?;
-    let final_parent = windows_final_path(&parent_handle)?;
-    let actual_parent = normalize_windows_handle_path(final_parent.as_os_str());
+    let actual_parent =
+        normalize_windows_handle_path(windows_final_path(&parent_handle)?.as_os_str());
     if actual_parent != expected_parent {
         return Err(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
@@ -789,16 +789,10 @@ fn platform_rename_no_replace(
         ));
     }
 
-    // SetFileInformationByHandle is most broadly supported with a NULL
-    // RootDirectory and a fully qualified destination. Build that path from
-    // the verified parent handle rather than reusing an unchecked lexical
-    // ancestor; the non-delete-sharing parent handle keeps it stable until the
-    // handle-based rename completes.
-    let canonical_destination = PathBuf::from(final_parent).join(destination_name);
-    let destination_name = canonical_destination
-        .as_os_str()
-        .encode_wide()
-        .collect::<Vec<_>>();
+    // Resolve the destination relative to the verified directory handle. An
+    // absolute path would reopen every lexical ancestor during the rename and
+    // reintroduce a path-swap race after validation.
+    let destination_name = destination_name.encode_wide().collect::<Vec<_>>();
     if destination_name.is_empty()
         || destination_name.len() > (u32::MAX as usize / std::mem::size_of::<u16>())
     {
@@ -832,14 +826,14 @@ fn platform_rename_no_replace(
     let mut rename_buffer = vec![0_usize; words];
     let rename_info = rename_buffer.as_mut_ptr().cast::<FILE_RENAME_INFO>();
     unsafe {
-        // The classic FileRenameInfo class with an absolute destination and a
-        // NULL RootDirectory avoids the relative-handle form that some file-
-        // system drivers reject with ERROR_INVALID_FUNCTION. The source stays
-        // bound by its handle, and ReplaceIfExists = false remains a kernel-
-        // enforced atomic no-replace operation with no check-then-rename
-        // window. Durability is requested with FILE_FLAG_WRITE_THROUGH.
+        // The destination stays bound to the verified parent handle, and
+        // ReplaceIfExists = false remains a kernel-enforced atomic no-replace
+        // operation with no check-then-rename window. The corrected full
+        // buffer size above is required by FileRenameInfo even though the
+        // structure declares a trailing FileName[1]. Durability is requested
+        // with FILE_FLAG_WRITE_THROUGH.
         (*rename_info).Anonymous.ReplaceIfExists = false;
-        (*rename_info).RootDirectory = std::ptr::null_mut();
+        (*rename_info).RootDirectory = parent_handle.as_raw_handle() as _;
         (*rename_info).FileNameLength = name_bytes as u32;
         std::ptr::copy_nonoverlapping(
             destination_name.as_ptr(),
