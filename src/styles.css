@@ -1050,6 +1050,14 @@ select {
     1px 1px 0 var(--shadow);
 }
 
+.warning .check-mark {
+  background: var(--blue);
+  box-shadow:
+    inset 1px 1px 0 #a9ccff,
+    inset -1px -1px 0 var(--blue-dark),
+    1px 1px 0 var(--shadow);
+}
+
 .check-list strong,
 .check-list small {
   display: block;

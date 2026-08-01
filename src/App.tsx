@@ -51,7 +51,11 @@ function formatBytes(bytes: number): string {
 function errorMessage(error: unknown): string {
   if (typeof error === "string") return error;
   if (error && typeof error === "object" && "message" in error) {
-    return String((error as InstallerError).message);
+    const installerError = error as InstallerError;
+    const message = String(installerError.message);
+    return installerError.detail && installerError.detail !== message
+      ? `${message}: ${installerError.detail}`
+      : message;
   }
   return String(error);
 }
@@ -60,6 +64,11 @@ function installationPriority(installation: InstallationInfo): number {
   return { managed: 0, manual: 1, steam: 2, packageManager: 3 }[
     installation.channel
   ];
+}
+
+function sourceVersion(release: ReleaseInfo): string {
+  const match = /^Aseprite-(v[^/]+)-Source\.zip$/.exec(release.sourceAssetName);
+  return match?.[1] ?? release.tag;
 }
 
 function App() {
@@ -152,11 +161,23 @@ function App() {
 
   const actionLabel = useMemo(() => {
     if (!flowTarget || flowTarget.channel === "manual") return t("install");
-    const comparison = compareVersions(selectedTag, flowTarget.version);
+    const comparison = compareVersions(
+      selectedRelease ? sourceVersion(selectedRelease) : selectedTag,
+      flowTarget.version,
+    );
     if (comparison > 0) return t("update");
     if (comparison < 0) return t("downgrade");
     return t("reinstall");
-  }, [flowTarget, selectedTag, t]);
+  }, [flowTarget, selectedRelease, selectedTag, t]);
+
+  const currentPreflightRequest = () => ({
+    tag: selectedTag,
+    targetPath:
+      flowTarget?.channel === "manual" || flowTarget?.channel === "managed"
+        ? flowTarget.path
+        : null,
+    adopt: flowTarget?.channel === "manual",
+  });
 
   const startFlow = (target: InstallationInfo | null) => {
     setFlowTarget(target);
@@ -173,7 +194,9 @@ function App() {
     setPreflightLoading(true);
     setError(null);
     try {
-      setPreflight(await withMinimumDuration(api.runPreflight()));
+      setPreflight(
+        await withMinimumDuration(api.runPreflight(currentPreflightRequest())),
+      );
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -185,7 +208,9 @@ function App() {
     setPreflightLoading(true);
     setError(null);
     try {
-      const refreshedPreflight = await withMinimumDuration(api.runPreflight());
+      const refreshedPreflight = await withMinimumDuration(
+        api.runPreflight(currentPreflightRequest()),
+      );
       setPreflight(refreshedPreflight);
       if (!refreshedPreflight.ready) return;
       setEulaAccepted(false);
@@ -254,11 +279,23 @@ function App() {
     setInstallingTools(true);
     setError(null);
     try {
-      setPreflight(await withMinimumDuration(api.installBuildTools()));
+      setPreflight(
+        await withMinimumDuration(
+          api.installBuildTools(currentPreflightRequest()),
+        ),
+      );
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
       setInstallingTools(false);
+    }
+  };
+
+  const cancelToolInstallation = async () => {
+    try {
+      await api.cancelOperation();
+    } catch (caught) {
+      setError(errorMessage(caught));
     }
   };
 
@@ -381,8 +418,14 @@ function App() {
                   {primaryInstallation.architecture ? ` · ${primaryInstallation.architecture}` : ""}
                 </p>
                 <p className="path" title={primaryInstallation.path}>{primaryInstallation.path}</p>
-                {primaryInstallation.channel === "manual" && (
+                {primaryInstallation.channel === "manual" && primaryInstallation.manageable && (
                   <p className="context-note">{t("manualStatusHint")}</p>
+                )}
+                {primaryInstallation.channel === "manual" && !primaryInstallation.manageable && (
+                  <p className="context-note">{t("manualReadOnlyHint")}</p>
+                )}
+                {primaryInstallation.channel === "managed" && !primaryInstallation.manageable && (
+                  <p className="context-note">{t("managedReadOnlyHint")}</p>
                 )}
                 {(primaryInstallation.channel === "steam" ||
                   primaryInstallation.channel === "packageManager") && (
@@ -412,7 +455,7 @@ function App() {
                 >
                   ▶ {t("openAseprite")}
                 </button>
-                {primaryInstallation.channel === "managed" || primaryInstallation.channel === "manual" ? (
+                {(primaryInstallation.channel === "managed" || primaryInstallation.channel === "manual") && primaryInstallation.manageable ? (
                   <button
                     className="button secondary full"
                     disabled={busy}
@@ -432,12 +475,12 @@ function App() {
                   <button className="button ghost compact" onClick={() => void api.revealInstallation(primaryInstallation.id)}>
                     {t("reveal")}
                   </button>
-                  {primaryInstallation.channel === "managed" && primaryInstallation.hasBackup && (
+                  {primaryInstallation.channel === "managed" && primaryInstallation.manageable && primaryInstallation.hasBackup && (
                     <button className="button ghost compact" disabled={busy} onClick={() => { setActionError(null); setPendingAction({ kind: "restore", installation: primaryInstallation }); }}>
                       {t("restore")}
                     </button>
                   )}
-                  {primaryInstallation.channel === "managed" && (
+                  {primaryInstallation.channel === "managed" && primaryInstallation.manageable && (
                     <button className="button danger ghost compact" disabled={busy} onClick={() => { setActionError(null); setPendingAction({ kind: "uninstall", installation: primaryInstallation }); }}>
                       {t("uninstall")}
                     </button>
@@ -510,7 +553,10 @@ function App() {
               <select id="release" value={selectedTag} onChange={(event) => setSelectedTag(event.target.value)}>
                 {releases.map((release) => (
                   <option key={release.tag} value={release.tag}>
-                    {release.tag.replace(/^v/, "")}
+                    {sourceVersion(release).replace(/^v/, "")}
+                    {sourceVersion(release) !== release.tag
+                      ? ` — ${t("releaseTag", { tag: release.tag.replace(/^v/, "") })}`
+                      : ""}
                     {release.latest ? ` — ${t("latest")}` : ""}
                     {release.prerelease ? ` — ${t("beta")}` : ""}
                   </option>
@@ -549,8 +595,13 @@ function App() {
             <>
               <ul className="check-list single-column">
                 {preflight.prerequisites.map((item) => (
-                  <li className={item.ok ? "ok" : "missing"} key={item.id}>
-                    <span className="check-mark">{item.ok ? "✓" : "!"}</span>
+                  <li
+                    className={item.ok ? "ok" : item.required ? "missing" : "warning"}
+                    key={item.id}
+                  >
+                    <span className="check-mark">
+                      {item.ok ? "✓" : item.required ? "!" : "~"}
+                    </span>
                     <div className="check-copy"><strong>{item.label}</strong><small title={item.detail}>{item.detail}</small></div>
                     {!item.ok && (
                       <button
@@ -559,15 +610,18 @@ function App() {
                         onClick={() => setHelpPrerequisite(item)}
                       >
                         <span aria-hidden="true">?</span>
-                        {t("installManually")}
+                        {t(item.required ? "resolveRequirement" : "reviewWarning")}
                       </button>
                     )}
                   </li>
                 ))}
               </ul>
               {preflight.homebrewAvailable && preflight.prerequisites.some((item) => !item.ok && (item.id === "cmake" || item.id === "ninja")) && (
-                <button className="button secondary full" disabled={installingTools} onClick={() => void installTools()}>
-                  {installingTools ? t("installingTools") : t("installTools")}
+                <button
+                  className="button secondary full"
+                  onClick={() => void (installingTools ? cancelToolInstallation() : installTools())}
+                >
+                  {installingTools ? t("cancelToolInstall") : t("installTools")}
                 </button>
               )}
               {!preflight.ready && <p className="blocking-note">{t("fixRequirements")}</p>}
@@ -620,7 +674,7 @@ function App() {
               </div>
               <p className="build-note">{t("buildingCanTake")}</p>
               <div className="progress-buttons">
-                {busy ? (
+                {busy && !["finalizing", "validating"].includes(progress.stage) ? (
                   <button className="button danger ghost" onClick={() => void api.cancelOperation()}>{t("cancel")}</button>
                 ) : progress.stage === "failed" ? (
                   <>

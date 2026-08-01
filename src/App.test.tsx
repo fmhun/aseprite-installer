@@ -37,6 +37,16 @@ const release = {
   size: 80_144_453,
 };
 
+const releaseWithNewerSourceAsset = {
+  ...release,
+  tag: "v1.3.15.4",
+  name: "Aseprite v1.3.15.4",
+  latest: false,
+  sourceAssetName: "Aseprite-v1.3.15.5-Source.zip",
+  sourceUrl:
+    "https://github.com/aseprite/aseprite/releases/download/v1.3.15.4/Aseprite-v1.3.15.5-Source.zip",
+};
+
 const preflight = {
   ready: true,
   architecture: "arm64",
@@ -67,6 +77,20 @@ const missingPreflight = {
       required: true,
       detail: "Not found",
       remediation: "Install CMake from cmake.org or Homebrew.",
+    },
+  ],
+};
+
+const warningPreflight = {
+  ...preflight,
+  prerequisites: [
+    {
+      id: "baseline",
+      label: "Aseprite documented baseline",
+      ok: false,
+      required: false,
+      detail: "Xcode 26.6 · SDK 26.5 (documented: Xcode 16.3 · SDK 15.4)",
+      remediation: "The functional checks passed with a different version.",
     },
   ],
 };
@@ -212,6 +236,11 @@ describe("Aseprite Installer contextual flow", () => {
       screen.getByRole("button", { name: /^Check requirements/ }),
     );
     await waitFor(() => expect(api.runPreflight).toHaveBeenCalledTimes(1));
+    expect(api.runPreflight).toHaveBeenLastCalledWith({
+      tag: release.tag,
+      targetPath: null,
+      adopt: false,
+    });
     expect(await screen.findByText("CMake")).toBeInTheDocument();
     expect(stepStates(stepper)).toEqual(["done", "current", "upcoming"]);
     expect(stepper).toHaveAttribute("data-current-step", "1");
@@ -267,6 +296,53 @@ describe("Aseprite Installer contextual flow", () => {
     ).toBeInTheDocument();
   });
 
+  it("offers a separate user copy when an existing installation is not writable", async () => {
+    vi.mocked(api.scanInstallations).mockResolvedValue([
+      { ...managedInstallation, manageable: false, writable: false },
+    ]);
+    render(<App />);
+
+    expect(
+      await screen.findByText(/no longer writable by the current account/),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Install a separate copy" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Reinstall or change version" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Uninstall" })).not.toBeInTheDocument();
+  });
+
+  it("compares an installed build with the actual source asset version", async () => {
+    vi.mocked(api.scanInstallations).mockResolvedValue([
+      { ...managedInstallation, version: "v1.3.15.5" },
+    ]);
+    vi.mocked(api.listReleases).mockResolvedValue([releaseWithNewerSourceAsset]);
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Reinstall or change version" }),
+    );
+    expect(
+      await screen.findByRole("option", {
+        name: "1.3.15.5 — GitHub tag 1.3.15.4",
+      }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Check requirements/ }),
+    );
+
+    expect(api.runPreflight).toHaveBeenLastCalledWith({
+      tag: releaseWithNewerSourceAsset.tag,
+      targetPath: managedInstallation.path,
+      adopt: false,
+    });
+    expect(
+      await screen.findByRole("button", { name: /^Recompile release/ }),
+    ).toBeEnabled();
+  });
+
   it("shows current manual setup guidance for every missing requirement", async () => {
     vi.mocked(api.runPreflight).mockResolvedValue(missingPreflight);
     render(<App />);
@@ -278,7 +354,7 @@ describe("Aseprite Installer contextual flow", () => {
       await screen.findByRole("button", { name: /^Check requirements/ }),
     );
     fireEvent.click(
-      await screen.findByRole("button", { name: "Install manually" }),
+      await screen.findByRole("button", { name: "How to resolve" }),
     );
 
     const dialog = screen.getByRole("dialog", { name: "Install CMake" });
@@ -286,6 +362,25 @@ describe("Aseprite Installer contextual flow", () => {
     expect(
       within(dialog).getByRole("button", { name: /Official CMake downloads/ }),
     ).toBeInTheDocument();
+  });
+
+  it("shows a documented-version difference as a non-blocking warning", async () => {
+    vi.mocked(api.runPreflight).mockResolvedValue(warningPreflight);
+    render(<App />);
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Compile a personal copy/ }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: /^Check requirements/ }),
+    );
+
+    expect(await screen.findByText("Aseprite documented baseline")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Why this warning?" })).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^Compile and install/ }),
+    ).toBeEnabled();
+    expect(screen.queryByText("Resolve the missing requirements to continue.")).not.toBeInTheDocument();
   });
 
   it("rechecks requirements before opening the EULA and refreshes invalid state", async () => {

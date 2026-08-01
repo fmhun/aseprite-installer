@@ -14,6 +14,7 @@ export type OperationStage =
   | "signing"
   | "backingUp"
   | "installing"
+  | "finalizing"
   | "validating"
   | "completed"
   | "failed"
@@ -68,11 +69,6 @@ export interface OperationProgress {
   percent: number | null;
   message: string;
   logLine: string | null;
-}
-
-export interface ManagedState {
-  schemaVersion: number;
-  installations: InstallationInfo[];
 }
 
 export interface InstallerError {
