@@ -272,6 +272,7 @@ function App() {
           </div>
 
           <div className="site-requirements">
+            <p className="site-requirements-note"><strong>Aseprite Installer manages requirement setup for you</strong> — installing supported tools automatically and guiding you through everything else.</p>
             <span>macOS 15.2+</span><span>Xcode + SDK</span><span>CMake</span><span>Ninja</span><span>~6 GB free</span>
           </div>
         </section>
