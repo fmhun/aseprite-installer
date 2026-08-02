@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-08-02",
+  "upstream": {
+    "repository": "aseprite/aseprite",
+    "default_branch": "main"
+  },
+  "implementation_origin_commit": "10ecbe414cb46d7f1ca2e7da18afeea3999307fb",
+  "baseline_release": {
+    "release_id": 358962894,
+    "tag": "v1.3.18.1",
+    "commit": "35c35e645f68b6a2d39808c9e7b193d3144f100d",
+    "prerelease": false,
+    "asset_id": 487651021,
+    "source_asset_name": "Aseprite-v1.3.18.1-Source.zip",
+    "source_asset_url": "https://github.com/aseprite/aseprite/releases/download/v1.3.18.1/Aseprite-v1.3.18.1-Source.zip",
+    "source_asset_digest": "sha256:438e7a1571990383beca761eca829402f14f225e164730eb2edc71b2e9566e58",
+    "source_asset_size": 80144453
+  },
+  "compatibility": {
+    "series": "1.3",
+    "reviewed_through": "v1.3.18.1",
+    "newer_release_policy": "blocked_until_review",
+    "portable_release_policy": "additional_pinned_skia_gate"
+  },
+  "tracked_files": {
+    "INSTALL.md": {
+      "baseline_blob_sha": "f2a54dd2c345650b2fa7da48263486446ac8ffc6",
+      "observed_main_blob_sha": "f2a54dd2c345650b2fa7da48263486446ac8ffc6",
+      "last_reviewed_change_commit": "76d11bd76fa077f492cb4255a627b5a337ff53e4",
+      "immutable_url": "https://github.com/aseprite/aseprite/blob/35c35e645f68b6a2d39808c9e7b193d3144f100d/INSTALL.md",
+      "current_url": "https://github.com/aseprite/aseprite/blob/main/INSTALL.md"
+    },
+    "build.sh": {
+      "scope": "macos",
+      "baseline_blob_sha": "5aa5dc4697cb32740f98e315006c1c7ef07ec1b7",
+      "observed_main_blob_sha": "5aa5dc4697cb32740f98e315006c1c7ef07ec1b7",
+      "last_reviewed_change_commit": "e88f3bb413f89ce7043a45897934042024fdaa2a",
+      "immutable_url": "https://github.com/aseprite/aseprite/blob/35c35e645f68b6a2d39808c9e7b193d3144f100d/build.sh",
+      "current_url": "https://github.com/aseprite/aseprite/blob/main/build.sh",
+      "arguments": [
+        "--auto",
+        "--norun"
+      ],
+      "documented_output": "build/bin/Aseprite.app",
+      "installer_output_policy": "validated_aseprite_app_bundle_under_build_directory"
+    }
+  }
+}

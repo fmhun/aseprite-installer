@@ -11,6 +11,7 @@ mod platform;
 mod portable_transaction;
 mod releases;
 mod state;
+mod upstream;
 
 use state::{AppState, InstallerPaths};
 use tauri::Manager;

@@ -9,6 +9,7 @@ use crate::platform::macos::{
 };
 use crate::releases::source_build_requirements;
 use crate::state::AppState;
+use crate::upstream::{ASEPRITE_BUILD_ARGUMENTS, ASEPRITE_BUILD_SCRIPT};
 use chrono::Utc;
 use fs2::available_space;
 use futures_util::StreamExt;
@@ -148,7 +149,7 @@ pub async fn install_release(
         let build_environment =
             prepare_build_environment(effective_cmake_version, &source_root.join(".build/tools"))?;
         validate_build_environment(&state.paths, &build_environment)?;
-        make_build_script_executable(&source_root.join("build.sh"))?;
+        make_build_script_executable(&source_root.join(ASEPRITE_BUILD_SCRIPT))?;
         send_stage(
             progress,
             OperationStage::Compiling,
@@ -597,7 +598,7 @@ fn find_source_root(work_dir: &Path) -> AppResult<PathBuf> {
         .into_iter()
         .filter_map(Result::ok)
     {
-        if entry.file_type().is_file() && entry.file_name() == "build.sh" {
+        if entry.file_type().is_file() && entry.file_name() == ASEPRITE_BUILD_SCRIPT {
             let Some(parent) = entry.path().parent() else {
                 continue;
             };
@@ -808,9 +809,8 @@ async fn run_build(
 ) -> AppResult<()> {
     let mut command = Command::new("/bin/bash");
     command
-        .arg("./build.sh")
-        .arg("--auto")
-        .arg("--norun")
+        .arg(format!("./{ASEPRITE_BUILD_SCRIPT}"))
+        .args(ASEPRITE_BUILD_ARGUMENTS)
         .current_dir(source_root)
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
