@@ -1,7 +1,8 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import indexHtml from "../index.html?raw";
 import App, { ProductDemo } from "./App";
+import type { NavigatorLike } from "./platformDetection";
 
 const RELEASES_LATEST_URL =
   "https://github.com/fmhun/aseprite-installer/releases/latest";
@@ -10,6 +11,31 @@ const originalVisibilityState = Object.getOwnPropertyDescriptor(
   document,
   "visibilityState",
 );
+const navigatorKeys = ["userAgent", "platform", "maxTouchPoints", "userAgentData"] as const;
+const originalNavigatorDescriptors = new Map(
+  navigatorKeys.map((key) => [key, Object.getOwnPropertyDescriptor(window.navigator, key)]),
+);
+
+function mockNavigator(values: NavigatorLike) {
+  for (const key of navigatorKeys) {
+    if (!(key in values)) continue;
+    Object.defineProperty(window.navigator, key, {
+      configurable: true,
+      value: values[key],
+    });
+  }
+}
+
+function restoreNavigator() {
+  for (const key of navigatorKeys) {
+    const descriptor = originalNavigatorDescriptors.get(key);
+    if (descriptor) {
+      Object.defineProperty(window.navigator, key, descriptor);
+    } else {
+      Reflect.deleteProperty(window.navigator, key);
+    }
+  }
+}
 
 const matchMedia = (matches: boolean) =>
   vi.fn().mockReturnValue({
@@ -35,6 +61,7 @@ describe("landing page", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+    restoreNavigator();
     if (originalVisibilityState) {
       Object.defineProperty(document, "visibilityState", originalVisibilityState);
     } else {
@@ -133,6 +160,12 @@ describe("landing page", () => {
   });
 
   it("uses an accessible deterministic platform tab interface", () => {
+    mockNavigator({
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.6 Safari/605.1.15",
+      platform: "MacIntel",
+      maxTouchPoints: 0,
+    });
     render(<App />);
 
     const [macosTab, windowsTab, linuxTab] = screen.getAllByRole("tab");
@@ -165,6 +198,283 @@ describe("landing page", () => {
     expect(linuxTab).toHaveFocus();
     fireEvent.keyDown(linuxTab, { key: "ArrowRight" });
     expect(macosTab).toHaveFocus();
+  });
+
+  it("auto-selects Windows and exposes the verified one-click package", async () => {
+    mockNavigator({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+      platform: "Win32",
+      maxTouchPoints: 0,
+      userAgentData: {
+        platform: "Windows",
+        mobile: false,
+        getHighEntropyValues: vi.fn().mockResolvedValue({
+          architecture: "x86",
+          bitness: "64",
+          platformVersion: "13.0.0",
+        }),
+      },
+    });
+    render(<App />);
+
+    const windowsTab = screen.getByRole("tab", { name: "Windows" });
+    await waitFor(() => expect(windowsTab).toHaveAttribute("aria-selected", "true"));
+    const smartDownload = await screen.findByRole("link", { name: /Download for Windows/i });
+    expect(smartDownload).toHaveAttribute(
+      "href",
+      `${ASSET_URL}/Aseprite-Installer-Windows-x64-setup.exe`,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Windows x64 detected · NSIS installer recommended",
+    );
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it("uses client hints for a one-click Apple Silicon download", async () => {
+    mockNavigator({
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+      platform: "MacIntel",
+      maxTouchPoints: 0,
+      userAgentData: {
+        platform: "macOS",
+        mobile: false,
+        getHighEntropyValues: vi.fn().mockResolvedValue({
+          architecture: "arm",
+          bitness: "64",
+          platformVersion: "15.2.0",
+        }),
+      },
+    });
+    render(<App />);
+
+    const smartDownload = await screen.findByRole("link", {
+      name: /Download for Apple Silicon/i,
+    });
+    expect(smartDownload).toHaveAttribute(
+      "href",
+      `${ASSET_URL}/Aseprite-Installer-macOS-arm64.dmg`,
+    );
+  });
+
+  it("recommends AppImage to a legacy Linux x86_64 browser", async () => {
+    mockNavigator({
+      userAgent: "Mozilla/5.0 (X11; Linux x86_64) Gecko/20100101 Firefox/141.0",
+      platform: "Linux x86_64",
+      maxTouchPoints: 0,
+    });
+    render(<App />);
+
+    expect(await screen.findByRole("link", { name: /Download AppImage/i })).toHaveAttribute(
+      "href",
+      `${ASSET_URL}/Aseprite-Installer-Linux-x86_64.AppImage`,
+    );
+    expect(screen.getByRole("tab", { name: "Linux" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
+  it("selects macOS without guessing Safari's CPU architecture", async () => {
+    mockNavigator({
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/18.6 Safari/605.1.15",
+      platform: "MacIntel",
+      maxTouchPoints: 0,
+    });
+    render(<App />);
+
+    const chooser = await screen.findByRole("link", {
+      name: /Choose Apple Silicon or Intel/i,
+    });
+    expect(chooser).toHaveAttribute("href", "#install");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "macOS detected · choose Apple Silicon or Intel",
+    );
+  });
+
+  it("never offers a desktop package to iPadOS desktop mode", async () => {
+    mockNavigator({
+      userAgent:
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1",
+      platform: "MacIntel",
+      maxTouchPoints: 5,
+    });
+    render(<App />);
+
+    const chooser = await screen.findByRole("link", { name: /Choose your platform/i });
+    expect(chooser).toHaveAttribute("href", "#install");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Mobile device detected · choose the target desktop computer",
+    );
+    expect(document.querySelector(".site-download-picker")).toHaveAttribute(
+      "data-active-platform",
+      "none",
+    );
+    expect(screen.getByText("Choose the desktop you want to install on.")).toBeVisible();
+    for (const tab of screen.getAllByRole("tab")) {
+      expect(tab).toHaveAttribute("aria-selected", "false");
+    }
+    for (const panel of document.querySelectorAll('[role="tabpanel"]')) {
+      expect(panel).toHaveAttribute("hidden");
+    }
+  });
+
+  it("keeps a manual tab choice when client hints resolve later", async () => {
+    type WindowsHints = { architecture: string; bitness: string; platformVersion: string };
+    let resolveHints: (value: WindowsHints) => void = () => undefined;
+    const highEntropyValues = new Promise<WindowsHints>((resolve) => {
+      resolveHints = resolve;
+    });
+    mockNavigator({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+      platform: "Win32",
+      userAgentData: {
+        platform: "Windows",
+        mobile: false,
+        getHighEntropyValues: vi.fn().mockReturnValue(highEntropyValues),
+      },
+    });
+    render(<App />);
+
+    const linuxTab = screen.getByRole("tab", { name: "Linux" });
+    fireEvent.click(linuxTab);
+    expect(linuxTab).toHaveAttribute("aria-selected", "true");
+
+    await act(async () => {
+      resolveHints({ architecture: "x86", bitness: "64", platformVersion: "13.0.0" });
+      await highEntropyValues;
+    });
+
+    expect(linuxTab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Linux selected manually · automatic selection paused",
+    );
+    expect(screen.getByRole("link", { name: /Choose a Linux package/i })).toHaveAttribute(
+      "href",
+      "#install",
+    );
+  });
+
+  it("does not change a focused CTA into a download underneath the user", async () => {
+    type WindowsHints = { architecture: string; bitness: string; platformVersion: string };
+    let resolveHints: (value: WindowsHints) => void = () => undefined;
+    const highEntropyValues = new Promise<WindowsHints>((resolve) => {
+      resolveHints = resolve;
+    });
+    mockNavigator({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+      platform: "Win32",
+      userAgentData: {
+        platform: "Windows",
+        mobile: false,
+        getHighEntropyValues: vi.fn().mockReturnValue(highEntropyValues),
+      },
+    });
+    render(<App />);
+
+    const chooser = await screen.findByRole("link", { name: /Review Windows downloads/i });
+    act(() => chooser.focus());
+
+    await act(async () => {
+      resolveHints({ architecture: "x86", bitness: "64", platformVersion: "13.0.0" });
+      await highEntropyValues;
+    });
+
+    expect(chooser).toHaveFocus();
+    expect(chooser).toHaveAttribute("href", "#install");
+    expect(chooser).toHaveTextContent("Review Windows downloads");
+
+    act(() => chooser.blur());
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /Download for Windows/i })).toHaveAttribute(
+        "href",
+        `${ASSET_URL}/Aseprite-Installer-Windows-x64-setup.exe`,
+      );
+    });
+  });
+
+  it("does not treat keyboard focus on an automatic tab as a manual selection", async () => {
+    mockNavigator({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+      platform: "Win32",
+      userAgentData: { platform: "Windows", mobile: false },
+    });
+    render(<App />);
+
+    const windowsTab = screen.getByRole("tab", { name: "Windows" });
+    await waitFor(() => expect(windowsTab).toHaveAttribute("aria-selected", "true"));
+    act(() => windowsTab.focus());
+
+    expect(screen.getByRole("status")).not.toHaveTextContent("selected manually");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Windows detected · confirm a Windows 11 x64 system",
+    );
+  });
+
+  it("blocks a direct download for an incompatible Windows version", async () => {
+    mockNavigator({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+      platform: "Win32",
+      userAgentData: {
+        platform: "Windows",
+        mobile: false,
+        getHighEntropyValues: vi.fn().mockResolvedValue({
+          architecture: "x86",
+          bitness: "64",
+          platformVersion: "10.0.0",
+        }),
+      },
+    });
+    render(<App />);
+
+    const chooser = await screen.findByRole("link", { name: /Review Windows downloads/i });
+    expect(chooser).toHaveAttribute("href", "#install");
+    expect(screen.getByRole("status")).toHaveTextContent(
+      "Windows 10 detected · Windows 11 is required",
+    );
+  });
+
+  it("freezes the CTA from pointer down until an in-flight detection is safe to apply", async () => {
+    type WindowsHints = { architecture: string; bitness: string; platformVersion: string };
+    let resolveHints: (value: WindowsHints) => void = () => undefined;
+    const highEntropyValues = new Promise<WindowsHints>((resolve) => {
+      resolveHints = resolve;
+    });
+    mockNavigator({
+      userAgent:
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+      platform: "Win32",
+      userAgentData: {
+        platform: "Windows",
+        mobile: false,
+        getHighEntropyValues: vi.fn().mockReturnValue(highEntropyValues),
+      },
+    });
+    render(<App />);
+
+    const chooser = await screen.findByRole("link", { name: /Review Windows downloads/i });
+    fireEvent.pointerDown(chooser);
+    await act(async () => {
+      resolveHints({ architecture: "x86", bitness: "64", platformVersion: "13.0.0" });
+      await highEntropyValues;
+    });
+
+    expect(chooser).toHaveAttribute("href", "#install");
+    expect(chooser).toHaveTextContent("Review Windows downloads");
+
+    fireEvent.pointerCancel(chooser);
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: /Download for Windows/i })).toHaveAttribute(
+        "href",
+        `${ASSET_URL}/Aseprite-Installer-Windows-x64-setup.exe`,
+      );
+    });
   });
 
   it("places Install before How it works in the page and navigation", () => {

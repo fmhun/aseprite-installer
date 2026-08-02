@@ -15,6 +15,18 @@ const matchMedia = vi.fn().mockReturnValue({
   removeListener: vi.fn(),
   dispatchEvent: vi.fn(),
 });
+const navigatorKeys = ["userAgent", "platform", "maxTouchPoints", "userAgentData"] as const;
+const originalNavigatorDescriptors = new Map(
+  navigatorKeys.map((key) => [key, Object.getOwnPropertyDescriptor(window.navigator, key)]),
+);
+
+function restoreNavigator() {
+  for (const key of navigatorKeys) {
+    const descriptor = originalNavigatorDescriptors.get(key);
+    if (descriptor) Object.defineProperty(window.navigator, key, descriptor);
+    else Reflect.deleteProperty(window.navigator, key);
+  }
+}
 
 describe("static landing hydration", () => {
   let root: Root | undefined;
@@ -29,6 +41,26 @@ describe("static landing hydration", () => {
       writable: true,
       value: matchMedia,
     });
+    Object.defineProperties(window.navigator, {
+      userAgent: {
+        configurable: true,
+        value: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/140 Safari/537.36",
+      },
+      platform: { configurable: true, value: "Win32" },
+      maxTouchPoints: { configurable: true, value: 0 },
+      userAgentData: {
+        configurable: true,
+        value: {
+          platform: "Windows",
+          mobile: false,
+          getHighEntropyValues: vi.fn().mockResolvedValue({
+            architecture: "x86",
+            bitness: "64",
+            platformVersion: "13.0.0",
+          }),
+        },
+      },
+    });
   });
 
   afterEach(async () => {
@@ -36,6 +68,7 @@ describe("static landing hydration", () => {
       await act(async () => root?.unmount());
       root = undefined;
     }
+    restoreNavigator();
     reactTestGlobal.IS_REACT_ACT_ENVIRONMENT = false;
   });
 
@@ -54,5 +87,11 @@ describe("static landing hydration", () => {
 
     expect(consoleError).not.toHaveBeenCalled();
     expect(document.querySelector("h1")).toHaveTextContent(/Install Aseprite\s*from source\./);
+    await vi.waitFor(() => {
+      expect(document.querySelector('[data-download-target="windows-x64"]')).toHaveAttribute(
+        "href",
+        "https://github.com/fmhun/aseprite-installer/releases/latest/download/Aseprite-Installer-Windows-x64-setup.exe",
+      );
+    });
   });
 });

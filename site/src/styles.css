@@ -1028,6 +1028,27 @@ summary:focus-visible {
     9px 9px 0 var(--shadow);
 }
 
+.site-detection-note {
+  display: flex;
+  min-height: 36px;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 8px 14px;
+  border-bottom: 2px solid var(--edge-dark);
+  color: var(--faint);
+  background: var(--sunken);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.35;
+  letter-spacing: 0.03em;
+}
+
+.site-detection-note span {
+  color: var(--blue);
+  font-size: 8px;
+}
+
 .site-platform-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1048,6 +1069,26 @@ summary:focus-visible {
   font-size: 14px;
   font-weight: 700;
   transition: color 120ms, background-color 120ms, box-shadow 120ms;
+}
+
+.site-platform-prompt {
+  padding: clamp(28px, 5vw, 48px) 24px;
+  text-align: center;
+  background: var(--face);
+}
+
+.site-platform-prompt strong {
+  display: block;
+  color: var(--text);
+  font-size: clamp(15px, 2vw, 19px);
+}
+
+.site-platform-prompt p {
+  max-width: 520px;
+  margin: 10px auto 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
 }
 
 .site-platform-tab:last-child { border-right: 0; }
@@ -1540,6 +1581,9 @@ summary:focus-visible {
   .site-process p,
   .site-source p { font-size: 14px; }
   .site-install-copy > p:not(.site-eyebrow) { font-size: 14px; }
+  .site-detection-note { min-height: 42px; padding: 8px 10px; font-size: 10px; }
+  .site-platform-prompt { padding: 28px 16px; }
+  .site-platform-prompt p { font-size: 12px; }
   .site-platform-tab { min-height: 48px; font-size: 12px; }
   .site-platform-panel { padding: 22px 16px 20px; }
   .site-platform-meta { align-items: center; gap: 12px; }

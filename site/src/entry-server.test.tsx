@@ -8,6 +8,9 @@ describe("static site rendering", () => {
     expect(html).toContain("<h1>");
     expect(html).toContain("Install <em>Aseprite</em>");
     expect(html).toContain("Choose your platform. Build locally.");
+    expect(html).toContain('href="#install">Choose your platform');
+    expect(html).toContain("Automatic detection runs locally");
+    expect(html).not.toMatch(/detected ·|selected manually/i);
     expect(html).toContain("macOS 15.2+");
     expect(html).toContain("Windows 11");
     expect(html).toContain("Linux x86_64");

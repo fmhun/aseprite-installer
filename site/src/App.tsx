@@ -1,7 +1,17 @@
-import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import installerIcon from "../../assets/icons/aseprite-installer.svg";
 import localBuildIcon from "../../assets/icons/aseprite-local.svg";
 import type { DemoPhase } from "./demo";
+import {
+  detectPlatform,
+  detectPlatformSync,
+  getCompatibleDownloadTarget,
+  supportedPlatforms,
+  type DownloadTarget,
+  type NavigatorLike,
+  type PlatformDetection,
+  type SupportedPlatform,
+} from "./platformDetection";
 import { useDemoPlayback } from "./useDemoPlayback";
 
 const GITHUB_URL = "https://github.com/fmhun/aseprite-installer";
@@ -22,6 +32,36 @@ const downloads = {
   linuxRpm: `${DOWNLOAD_ASSET_URL}/Aseprite-Installer-Linux-x86_64.rpm`,
   checksums: `${DOWNLOAD_ASSET_URL}/SHA256SUMS`,
 } as const;
+
+const directDownloadCtas: Record<
+  DownloadTarget,
+  { href: string; label: string; platform: SupportedPlatform; status: string }
+> = {
+  "macos-arm64": {
+    href: downloads.macosArmDmg,
+    label: "Download for Apple Silicon",
+    platform: "macos",
+    status: "Apple Silicon detected · Apple Silicon DMG recommended",
+  },
+  "macos-x64": {
+    href: downloads.macosIntelDmg,
+    label: "Download for Intel Mac",
+    platform: "macos",
+    status: "Intel Mac detected · Intel DMG recommended",
+  },
+  "windows-x64": {
+    href: downloads.windowsNsis,
+    label: "Download for Windows",
+    platform: "windows",
+    status: "Windows x64 detected · NSIS installer recommended",
+  },
+  "linux-x64": {
+    href: downloads.linuxAppImage,
+    label: "Download AppImage",
+    platform: "linux",
+    status: "Linux x86_64 detected · AppImage recommended",
+  },
+};
 
 function ExternalArrow() {
   return <span aria-hidden="true">↗</span>;
@@ -213,14 +253,110 @@ export function ProductDemo() {
   );
 }
 
-const platformIds = ["macos", "windows", "linux"] as const;
-type PlatformId = (typeof platformIds)[number];
+const platformIds = supportedPlatforms;
+type PlatformId = SupportedPlatform;
 
 const platformLabels: Record<PlatformId, string> = {
   macos: "macOS",
   windows: "Windows",
   linux: "Linux",
 };
+
+interface SmartDownloadCta {
+  href: string;
+  label: string;
+  target: DownloadTarget | null;
+}
+
+function getSmartDownloadCta(
+  detection: PlatformDetection | null,
+  manualPlatform: PlatformId | null,
+): SmartDownloadCta {
+  const detectedTarget = detection ? getCompatibleDownloadTarget(detection) : null;
+  const directCta = detectedTarget ? directDownloadCtas[detectedTarget] : null;
+
+  if (manualPlatform) {
+    if (directCta?.platform === manualPlatform) {
+      return { href: directCta.href, label: directCta.label, target: detectedTarget };
+    }
+    return {
+      href: "#install",
+      label:
+        manualPlatform === "macos"
+          ? "Choose Apple Silicon or Intel"
+          : `Choose a ${platformLabels[manualPlatform]} package`,
+      target: null,
+    };
+  }
+
+  if (directCta && detectedTarget) {
+    return { href: directCta.href, label: directCta.label, target: detectedTarget };
+  }
+
+  if (detection?.platform === "macos" && !detection.hasConflict) {
+    return { href: "#install", label: "Choose Apple Silicon or Intel", target: null };
+  }
+  if (detection?.platform === "windows" && !detection.hasConflict) {
+    return { href: "#install", label: "Review Windows downloads", target: null };
+  }
+  if (detection?.platform === "linux" && !detection.hasConflict) {
+    return { href: "#install", label: "Choose a compatible Linux package", target: null };
+  }
+  return { href: "#install", label: "Choose your platform", target: null };
+}
+
+function getDetectionStatus(
+  detection: PlatformDetection | null,
+  manualPlatform: PlatformId | null,
+): string {
+  if (manualPlatform) {
+    return `${platformLabels[manualPlatform]} selected manually · automatic selection paused`;
+  }
+  if (!detection) {
+    return "Automatic detection runs locally · manual choice always wins";
+  }
+  if (detection.hasConflict) {
+    return "System signals disagree · choose your platform manually";
+  }
+  if (detection.deviceKind === "mobile") {
+    return "Mobile device detected · choose the target desktop computer";
+  }
+  if (detection.exclusionReason === "chromeos") {
+    return "ChromeOS detected · choose a package for another supported computer";
+  }
+  if (detection.deviceKind === "unsupported") {
+    return "Unsupported system detected · choose the target computer manually";
+  }
+
+  const target = getCompatibleDownloadTarget(detection);
+  if (target) return directDownloadCtas[target].status;
+
+  if (detection.platform === "macos") {
+    if (detection.osCompatibility === "incompatible") {
+      return `${detection.platformVersion ? `macOS ${detection.platformVersion}` : "This macOS version"} detected · macOS 15.2+ is required`;
+    }
+    if (detection.architecture !== "unknown" && detection.osCompatibility === "unknown") {
+      return "Mac architecture detected · confirm macOS 15.2+ before downloading";
+    }
+    return "macOS detected · choose Apple Silicon or Intel";
+  }
+  if (detection.platform === "windows") {
+    if (detection.osCompatibility === "incompatible") {
+      return "Windows 10 detected · Windows 11 is required";
+    }
+    return detection.architecture === "arm64"
+      ? "Windows ARM64 detected · current packages require x64"
+      : detection.architecture === "x64" && detection.osCompatibility === "unknown"
+        ? "Windows x64 detected · confirm Windows 11 before downloading"
+        : "Windows detected · confirm a Windows 11 x64 system";
+  }
+  if (detection.platform === "linux") {
+    return detection.architecture === "arm64"
+      ? "Linux ARM64 detected · current packages require x86_64"
+      : "Linux detected · choose a compatible x86_64 package";
+  }
+  return "System not recognized · choose your platform manually";
+}
 
 function PackageLink({
   href,
@@ -241,13 +377,20 @@ function PackageLink({
   );
 }
 
-function DownloadPicker() {
-  const [activePlatform, setActivePlatform] = useState<PlatformId>("macos");
+function DownloadPicker({
+  activePlatform,
+  detectionStatus,
+  onPlatformChange,
+}: {
+  activePlatform: PlatformId | null;
+  detectionStatus: string;
+  onPlatformChange: (platform: PlatformId) => void;
+}) {
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   const activateTab = (index: number) => {
     const platform = platformIds[index];
-    setActivePlatform(platform);
+    onPlatformChange(platform);
     tabRefs.current[index]?.focus();
   };
 
@@ -266,7 +409,10 @@ function DownloadPicker() {
   };
 
   return (
-    <div className="site-download-picker">
+    <div className="site-download-picker" data-active-platform={activePlatform ?? "none"}>
+      <p className="site-detection-note" role="status">
+        <span aria-hidden="true">◆</span> {detectionStatus}
+      </p>
       <div className="site-platform-tabs" role="tablist" aria-label="Choose your operating system">
         {platformIds.map((platform, index) => (
           <button
@@ -277,9 +423,9 @@ function DownloadPicker() {
             role="tab"
             aria-controls={`platform-${platform}-panel`}
             aria-selected={activePlatform === platform}
-            tabIndex={activePlatform === platform ? 0 : -1}
+            tabIndex={activePlatform === platform || (!activePlatform && index === 0) ? 0 : -1}
             ref={(node) => { tabRefs.current[index] = node; }}
-            onClick={() => setActivePlatform(platform)}
+            onClick={() => onPlatformChange(platform)}
             onKeyDown={(event) => handleTabKeyDown(event, index)}
           >
             {platformLabels[platform]}
@@ -287,12 +433,20 @@ function DownloadPicker() {
         ))}
       </div>
 
+      {!activePlatform && (
+        <div className="site-platform-prompt">
+          <strong>Choose the desktop you want to install on.</strong>
+          <p>Pick macOS, Windows, or Linux above to see its verified packages and requirements.</p>
+        </div>
+      )}
+
       <section
         className="site-platform-panel"
         id="platform-macos-panel"
         role="tabpanel"
         aria-labelledby="platform-macos-tab"
         hidden={activePlatform !== "macos"}
+        tabIndex={activePlatform === "macos" ? 0 : -1}
       >
         <div className="site-platform-meta">
           <div><h3>macOS</h3><p>macOS 15.2+ · Apple Silicon or Intel</p></div>
@@ -324,6 +478,7 @@ function DownloadPicker() {
         role="tabpanel"
         aria-labelledby="platform-windows-tab"
         hidden={activePlatform !== "windows"}
+        tabIndex={activePlatform === "windows" ? 0 : -1}
       >
         <div className="site-platform-meta">
           <div><h3>Windows</h3><p>Windows 11 · x64</p></div>
@@ -353,6 +508,7 @@ function DownloadPicker() {
         role="tabpanel"
         aria-labelledby="platform-linux-tab"
         hidden={activePlatform !== "linux"}
+        tabIndex={activePlatform === "linux" ? 0 : -1}
       >
         <div className="site-platform-meta">
           <div><h3>Linux</h3><p>x86_64 · Ubuntu 22.04 / Debian 12 baseline</p></div>
@@ -389,6 +545,79 @@ function DownloadPicker() {
 }
 
 function App() {
+  const [detection, setDetection] = useState<PlatformDetection | null>(null);
+  const [ctaDetection, setCtaDetection] = useState<PlatformDetection | null>(null);
+  const [manualPlatform, setManualPlatform] = useState<PlatformId | null>(null);
+  const heroCtaRef = useRef<HTMLAnchorElement>(null);
+  const heroCtaPointerActiveRef = useRef(false);
+  const pendingCtaDetectionRef = useRef<PlatformDetection | null>(null);
+  const pendingCtaReleaseTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const navigatorLike = navigator as Navigator & NavigatorLike;
+
+    const applyDetection = (nextDetection: PlatformDetection) => {
+      if (cancelled) return;
+      setDetection(nextDetection);
+
+      if (
+        heroCtaPointerActiveRef.current ||
+        document.activeElement === heroCtaRef.current
+      ) {
+        pendingCtaDetectionRef.current = nextDetection;
+      } else {
+        pendingCtaDetectionRef.current = null;
+        setCtaDetection(nextDetection);
+      }
+    };
+
+    applyDetection(detectPlatformSync(navigatorLike));
+    void detectPlatform(navigatorLike).then(applyDetection);
+
+    return () => {
+      cancelled = true;
+      if (pendingCtaReleaseTimerRef.current !== null) {
+        window.clearTimeout(pendingCtaReleaseTimerRef.current);
+      }
+    };
+  }, []);
+
+  const activePlatform =
+    manualPlatform ??
+    (detection === null
+      ? "macos"
+      : detection.platform && !detection.hasConflict
+        ? detection.platform
+        : null);
+  const smartCta = getSmartDownloadCta(ctaDetection, manualPlatform);
+  const detectionStatus = getDetectionStatus(detection, manualPlatform);
+
+  const handlePlatformChoice = (platform: PlatformId) => {
+    setManualPlatform(platform);
+  };
+
+  const handleHeroCtaBlur = () => {
+    heroCtaPointerActiveRef.current = false;
+    const pendingDetection = pendingCtaDetectionRef.current;
+    if (!pendingDetection) return;
+    pendingCtaDetectionRef.current = null;
+    setCtaDetection(pendingDetection);
+  };
+
+  const handleHeroCtaPointerCancel = () => {
+    heroCtaPointerActiveRef.current = false;
+    handleHeroCtaBlur();
+  };
+
+  const handleHeroCtaClick = () => {
+    heroCtaPointerActiveRef.current = false;
+    pendingCtaReleaseTimerRef.current = window.setTimeout(() => {
+      pendingCtaReleaseTimerRef.current = null;
+      if (document.activeElement !== heroCtaRef.current) handleHeroCtaBlur();
+    }, 0);
+  };
+
   return (
     <div className="site-page">
       <a className="site-skip-link" href="#main">Skip to content</a>
@@ -416,7 +645,18 @@ function App() {
               Aseprite Installer verifies official source, checks your build tools, and compiles a personal copy locally on macOS, Windows, or Linux. The installer is free and MIT-licensed; Aseprite’s EULA still applies.
             </p>
             <div className="site-hero-actions">
-              <a className="site-button" href="#install">Choose your platform <span aria-hidden="true">↓</span></a>
+              <a
+                className="site-button"
+                data-download-target={smartCta.target ?? "picker"}
+                href={smartCta.href}
+                onBlur={handleHeroCtaBlur}
+                onClick={handleHeroCtaClick}
+                onPointerCancel={handleHeroCtaPointerCancel}
+                onPointerDown={() => { heroCtaPointerActiveRef.current = true; }}
+                ref={heroCtaRef}
+              >
+                {smartCta.label} <span aria-hidden="true">↓</span>
+              </a>
               <a className="site-text-link" href={GITHUB_URL}>View source on GitHub <ExternalArrow /></a>
             </div>
             <p className="site-compatibility">
@@ -441,7 +681,11 @@ function App() {
             <h2>Choose your platform. Build locally.</h2>
             <p>Select the installer made for your system. Every package comes from the same verified release and builds Aseprite only on your device.</p>
           </div>
-          <DownloadPicker />
+          <DownloadPicker
+            activePlatform={activePlatform}
+            detectionStatus={detectionStatus}
+            onPlatformChange={handlePlatformChoice}
+          />
         </section>
 
         <section className="site-section site-how" id="how-it-works">
