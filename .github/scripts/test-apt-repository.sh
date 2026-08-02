@@ -157,6 +157,15 @@ APT_REPOSITORY_VALID_UNTIL='Thu, 01 Jan 2099 00:00:00 +0000' \
   "$repository_root/site/public/apt/aseprite-installer.sources" \
   "$repository_root/site/public/apt/aseprite-installer.pref" \
   "$test_fingerprint"
+(
+  cd "$temporary_directory"
+  "$repository_root/.github/scripts/verify-apt-repository.sh" \
+    repository \
+    "$test_public_key" \
+    "$repository_root/site/public/apt/aseprite-installer.sources" \
+    "$repository_root/site/public/apt/aseprite-installer.pref" \
+    "$test_fingerprint"
+)
 
 tampered_repository="$temporary_directory/tampered-repository"
 cp -a "$output_directory" "$tampered_repository"

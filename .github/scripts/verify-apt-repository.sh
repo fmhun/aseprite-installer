@@ -13,6 +13,12 @@ sources_file="$3"
 preferences_file="$4"
 expected_fingerprint="${5//[[:space:]]/}"
 
+if [[ ! -d "$repository_directory" || -L "$repository_directory" ]]; then
+  echo "Repository directory must be a real directory, not a symlink." >&2
+  exit 1
+fi
+repository_directory="$(cd "$repository_directory" && pwd -P)"
+
 for command_name in apt-cache apt-ftparchive apt-get dpkg-deb gpg gpgv gzip sha256sum xz; do
   if ! command -v "$command_name" >/dev/null 2>&1; then
     echo "Missing required command: $command_name" >&2
