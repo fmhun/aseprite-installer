@@ -83,6 +83,24 @@ npm install
 npm run tauri dev
 ```
 
+### Landing-page platform simulation
+
+The deployed landing page exposes a namespaced, allow-listed simulator for browser QA. In Chrome DevTools, run:
+
+```js
+AsepriteInstaller.platform.help()
+AsepriteInstaller.platform.simulate("macos-arm64")
+AsepriteInstaller.platform.simulate("macos-x64")
+AsepriteInstaller.platform.simulate("windows")
+AsepriteInstaller.platform.simulate("linux")
+AsepriteInstaller.platform.simulate("mobile")
+AsepriteInstaller.platform.state()
+AsepriteInstaller.platform.list()
+AsepriteInstaller.platform.reset()
+```
+
+Simulations update the page immediately without modifying `navigator` or initiating a download. They are memory-only by default. To keep one for the current tab across reloads, pass `{ persist: "session" }`. `reset()` clears the override and its session value; if browser storage becomes inaccessible, it fails atomically instead of reporting a false reset.
+
 Quality checks:
 
 ```bash

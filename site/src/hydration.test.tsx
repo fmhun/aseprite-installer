@@ -4,6 +4,10 @@ import { hydrateRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { render } from "./entry-server";
+import {
+  resetPlatformSimulation,
+  simulatePlatform,
+} from "./platformSimulation";
 
 const matchMedia = vi.fn().mockReturnValue({
   matches: false,
@@ -35,6 +39,7 @@ describe("static landing hydration", () => {
   };
 
   beforeEach(() => {
+    resetPlatformSimulation();
     reactTestGlobal.IS_REACT_ACT_ENVIRONMENT = true;
     Object.defineProperty(window, "matchMedia", {
       configurable: true,
@@ -68,7 +73,9 @@ describe("static landing hydration", () => {
       await act(async () => root?.unmount());
       root = undefined;
     }
+    resetPlatformSimulation();
     restoreNavigator();
+    vi.restoreAllMocks();
     reactTestGlobal.IS_REACT_ACT_ENVIRONMENT = false;
   });
 
@@ -91,6 +98,40 @@ describe("static landing hydration", () => {
       expect(document.querySelector('[data-download-target="windows-x64"]')).toHaveAttribute(
         "href",
         "https://github.com/fmhun/aseprite-installer/releases/latest/download/Aseprite-Installer-Windows-x64-setup.exe",
+      );
+    });
+  });
+
+  it("hydrates a session platform override without changing the server markup", async () => {
+    simulatePlatform("linux-x64", { persist: "session" });
+    const serverHtml = render();
+
+    expect(serverHtml).toContain('data-platform-simulation="none"');
+    expect(serverHtml).toContain('data-download-target="picker"');
+    document.body.innerHTML = `<div id="root" data-prerendered="true">${serverHtml}</div>`;
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await act(async () => {
+      root = hydrateRoot(
+        document.getElementById("root")!,
+        <StrictMode>
+          <App />
+        </StrictMode>,
+      );
+    });
+
+    expect(consoleError).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(document.querySelector(".site-page")).toHaveAttribute(
+        "data-platform-simulation",
+        "linux-x64",
+      );
+      expect(document.querySelector('[data-download-target="linux-x64"]')).toHaveAttribute(
+        "href",
+        "https://github.com/fmhun/aseprite-installer/releases/latest/download/Aseprite-Installer-Linux-x86_64.AppImage",
+      );
+      expect(document.querySelector(".site-detection-note")).toHaveTextContent(
+        "Simulation · Linux x86_64 detected · AppImage recommended · Chrome console override",
       );
     });
   });

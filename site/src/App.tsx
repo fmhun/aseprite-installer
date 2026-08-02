@@ -1,4 +1,11 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type KeyboardEvent,
+  type ReactNode,
+} from "react";
 import installerIcon from "../../assets/icons/aseprite-installer.svg";
 import localBuildIcon from "../../assets/icons/aseprite-local.svg";
 import type { DemoPhase } from "./demo";
@@ -12,6 +19,12 @@ import {
   type PlatformDetection,
   type SupportedPlatform,
 } from "./platformDetection";
+import {
+  getPlatformSimulationServerSnapshot,
+  getPlatformSimulationSnapshot,
+  getSimulatedPlatformDetection,
+  subscribePlatformSimulation,
+} from "./platformSimulation";
 import { useDemoPlayback } from "./useDemoPlayback";
 
 const GITHUB_URL = "https://github.com/fmhun/aseprite-installer";
@@ -326,6 +339,11 @@ interface SmartDownloadCta {
   href: string;
   label: string;
   target: DownloadTarget | null;
+}
+
+interface CtaSelection {
+  detection: PlatformDetection | null;
+  manualPlatform: PlatformId | null;
 }
 
 function getSmartDownloadCta(
@@ -758,42 +776,62 @@ function DownloadPicker({
 }
 
 function App() {
-  const [detection, setDetection] = useState<PlatformDetection | null>(null);
-  const [ctaDetection, setCtaDetection] = useState<PlatformDetection | null>(null);
+  const [nativeDetection, setNativeDetection] = useState<PlatformDetection | null>(null);
+  const [ctaSelection, setCtaSelection] = useState<CtaSelection>({
+    detection: null,
+    manualPlatform: null,
+  });
   const [manualPlatform, setManualPlatform] = useState<PlatformId | null>(null);
+  const simulation = useSyncExternalStore(
+    subscribePlatformSimulation,
+    getPlatformSimulationSnapshot,
+    getPlatformSimulationServerSnapshot,
+  );
+  const simulatedDetection = getSimulatedPlatformDetection(simulation);
+  const detection = simulatedDetection ?? nativeDetection;
   const heroCtaRef = useRef<HTMLAnchorElement>(null);
   const heroCtaPointerActiveRef = useRef(false);
-  const pendingCtaDetectionRef = useRef<PlatformDetection | null>(null);
+  const pendingCtaSelectionRef = useRef<CtaSelection | null>(null);
   const pendingCtaReleaseTimerRef = useRef<number | null>(null);
+  const pointerReleaseTimerRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const navigatorLike = navigator as Navigator & NavigatorLike;
 
-    const applyDetection = (nextDetection: PlatformDetection) => {
-      if (cancelled) return;
-      setDetection(nextDetection);
-
-      if (
-        heroCtaPointerActiveRef.current ||
-        document.activeElement === heroCtaRef.current
-      ) {
-        pendingCtaDetectionRef.current = nextDetection;
-      } else {
-        pendingCtaDetectionRef.current = null;
-        setCtaDetection(nextDetection);
-      }
-    };
-
-    applyDetection(detectPlatformSync(navigatorLike));
-    void detectPlatform(navigatorLike).then(applyDetection);
+    setNativeDetection(detectPlatformSync(navigatorLike));
+    void detectPlatform(navigatorLike).then((nextDetection) => {
+      if (!cancelled) setNativeDetection(nextDetection);
+    });
 
     return () => {
       cancelled = true;
-      if (pendingCtaReleaseTimerRef.current !== null) {
-        window.clearTimeout(pendingCtaReleaseTimerRef.current);
-      }
     };
+  }, []);
+
+  useEffect(() => {
+    if (simulation.id !== null || simulation.revision > 0) {
+      setManualPlatform(null);
+    }
+  }, [simulation.id, simulation.revision]);
+
+  useEffect(() => {
+    const nextSelection: CtaSelection = { detection, manualPlatform };
+    if (
+      heroCtaPointerActiveRef.current ||
+      document.activeElement === heroCtaRef.current
+    ) {
+      pendingCtaSelectionRef.current = nextSelection;
+    } else {
+      pendingCtaSelectionRef.current = null;
+      setCtaSelection(nextSelection);
+    }
+  }, [detection, manualPlatform]);
+
+  useEffect(() => () => {
+    if (pendingCtaReleaseTimerRef.current !== null) {
+      window.clearTimeout(pendingCtaReleaseTimerRef.current);
+    }
   }, []);
 
   const activePlatform =
@@ -803,8 +841,14 @@ function App() {
       : detection.platform && !detection.hasConflict
         ? detection.platform
         : null);
-  const smartCta = getSmartDownloadCta(ctaDetection, manualPlatform);
-  const detectionStatus = getDetectionStatus(detection, manualPlatform);
+  const smartCta = getSmartDownloadCta(
+    ctaSelection.detection,
+    ctaSelection.manualPlatform,
+  );
+  const effectiveDetectionStatus = getDetectionStatus(detection, manualPlatform);
+  const detectionStatus = simulation.id
+    ? `Simulation · ${effectiveDetectionStatus} · Chrome console override`
+    : effectiveDetectionStatus;
 
   const handlePlatformChoice = (platform: PlatformId) => {
     setManualPlatform(platform);
@@ -812,10 +856,10 @@ function App() {
 
   const handleHeroCtaBlur = () => {
     heroCtaPointerActiveRef.current = false;
-    const pendingDetection = pendingCtaDetectionRef.current;
-    if (!pendingDetection) return;
-    pendingCtaDetectionRef.current = null;
-    setCtaDetection(pendingDetection);
+    const pendingSelection = pendingCtaSelectionRef.current;
+    if (!pendingSelection) return;
+    pendingCtaSelectionRef.current = null;
+    setCtaSelection(pendingSelection);
   };
 
   const handleHeroCtaPointerCancel = () => {
@@ -831,8 +875,35 @@ function App() {
     }, 0);
   };
 
+  useEffect(() => {
+    const releasePointerGuard = () => {
+      if (!heroCtaPointerActiveRef.current) return;
+      if (pointerReleaseTimerRef.current !== null) {
+        window.clearTimeout(pointerReleaseTimerRef.current);
+      }
+      pointerReleaseTimerRef.current = window.setTimeout(() => {
+        pointerReleaseTimerRef.current = null;
+        if (heroCtaPointerActiveRef.current) handleHeroCtaBlur();
+      }, 0);
+    };
+
+    window.addEventListener("pointerup", releasePointerGuard);
+    window.addEventListener("pointercancel", releasePointerGuard);
+    return () => {
+      window.removeEventListener("pointerup", releasePointerGuard);
+      window.removeEventListener("pointercancel", releasePointerGuard);
+      if (pointerReleaseTimerRef.current !== null) {
+        window.clearTimeout(pointerReleaseTimerRef.current);
+      }
+    };
+  }, []);
+
   return (
-    <div className="site-page">
+    <div
+      className="site-page"
+      data-effective-platform={activePlatform ?? "none"}
+      data-platform-simulation={simulation.id ?? "none"}
+    >
       <a className="site-skip-link" href="#main">Skip to content</a>
       <header className="site-header">
         <a className="site-logo" href="#top" aria-label="Aseprite Installer home">

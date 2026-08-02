@@ -17,6 +17,7 @@ export type DetectionSource =
   | "ua-client-hints"
   | "legacy-platform"
   | "user-agent"
+  | "simulation"
   | "none";
 
 export type DownloadTarget =

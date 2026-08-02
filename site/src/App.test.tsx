@@ -3,6 +3,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import indexHtml from "../index.html?raw";
 import App, { ProductDemo } from "./App";
 import type { NavigatorLike } from "./platformDetection";
+import {
+  resetPlatformSimulation,
+  simulatePlatform,
+} from "./platformSimulation";
 
 const RELEASES_LATEST_URL =
   "https://github.com/fmhun/aseprite-installer/releases/latest";
@@ -487,6 +491,338 @@ describe("landing page", () => {
 
       expect(copyButton).toHaveTextContent("Copy");
       expect(viewer.getByRole("status")).toBeEmptyDOMElement();
+    });
+  });
+
+  describe("Chrome console platform simulation", () => {
+    beforeEach(() => {
+      resetPlatformSimulation();
+    });
+
+    afterEach(() => {
+      act(() => {
+        resetPlatformSimulation();
+      });
+    });
+
+    it.each([
+      [
+        "macos-arm64",
+        "macOS",
+        "macos-arm64",
+        "Download for Apple Silicon",
+        `${ASSET_URL}/Aseprite-Installer-macOS-arm64.dmg`,
+        "Apple Silicon detected · Apple Silicon DMG recommended",
+      ],
+      [
+        "macos-x64",
+        "macOS",
+        "macos-x64",
+        "Download for Intel Mac",
+        `${ASSET_URL}/Aseprite-Installer-macOS-x64.dmg`,
+        "Intel Mac detected · Intel DMG recommended",
+      ],
+      [
+        "windows-x64",
+        "Windows",
+        "windows-x64",
+        "Download for Windows",
+        `${ASSET_URL}/Aseprite-Installer-Windows-x64-setup.exe`,
+        "Windows x64 detected · NSIS installer recommended",
+      ],
+      [
+        "linux-x64",
+        "Linux",
+        "linux-x64",
+        "Download AppImage",
+        `${ASSET_URL}/Aseprite-Installer-Linux-x86_64.AppImage`,
+        "Linux x86_64 detected · AppImage recommended",
+      ],
+    ] as const)(
+      "simulates the %s direct-download client without navigating",
+      async (
+        simulationId,
+        tabName,
+        downloadTarget,
+        ctaName,
+        expectedHref,
+        expectedStatus,
+      ) => {
+        mockNavigator({ userAgent: "", platform: "", maxTouchPoints: 0 });
+        render(<App />);
+
+        act(() => {
+          simulatePlatform(simulationId);
+        });
+
+        await waitFor(() => {
+          expect(screen.getByRole("tab", { name: tabName })).toHaveAttribute(
+            "aria-selected",
+            "true",
+          );
+          expect(screen.getByRole("link", { name: new RegExp(ctaName, "i") })).toHaveAttribute(
+            "href",
+            expectedHref,
+          );
+        });
+
+        expect(document.querySelector(".site-page")).toHaveAttribute(
+          "data-platform-simulation",
+          simulationId,
+        );
+        expect(document.querySelector(".site-detection-note")).toHaveTextContent(
+          `Simulation · ${expectedStatus} · Chrome console override`,
+        );
+        expect(
+          screen.getByRole("link", { name: new RegExp(ctaName, "i") }),
+        ).toHaveAttribute("data-download-target", downloadTarget);
+      },
+    );
+
+    it("clears a manual platform choice when a new simulation is requested", async () => {
+      mockNavigator({ userAgent: "", platform: "", maxTouchPoints: 0 });
+      render(<App />);
+
+      act(() => {
+        simulatePlatform("macos-arm64");
+      });
+      await waitFor(() => {
+        expect(screen.getByRole("link", { name: /Download for Apple Silicon/i })).toBeInTheDocument();
+      });
+
+      fireEvent.click(screen.getByRole("tab", { name: "Windows" }));
+      expect(document.querySelector(".site-detection-note")).toHaveTextContent(
+        "Windows selected manually · automatic selection paused",
+      );
+      expect(document.querySelector(".site-page")).toHaveAttribute(
+        "data-platform-simulation",
+        "macos-arm64",
+      );
+      expect(document.querySelector(".site-page")).toHaveAttribute(
+        "data-effective-platform",
+        "windows",
+      );
+
+      act(() => {
+        simulatePlatform("linux-x64");
+      });
+
+      await waitFor(() => {
+        expect(screen.getByRole("tab", { name: "Linux" })).toHaveAttribute(
+          "aria-selected",
+          "true",
+        );
+        expect(screen.getByRole("link", { name: /Download AppImage/i })).toHaveAttribute(
+          "data-download-target",
+          "linux-x64",
+        );
+      });
+      expect(document.querySelector(".site-detection-note")).toHaveTextContent(
+        "Simulation · Linux x86_64 detected · AppImage recommended · Chrome console override",
+      );
+      expect(document.querySelector(".site-detection-note")).not.toHaveTextContent(
+        "selected manually",
+      );
+    });
+
+    it("returns to the latest real detector result after reset", async () => {
+      mockNavigator({
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+        platform: "Win32",
+        maxTouchPoints: 0,
+        userAgentData: {
+          platform: "Windows",
+          mobile: false,
+          getHighEntropyValues: vi.fn().mockResolvedValue({
+            architecture: "x86",
+            bitness: "64",
+            platformVersion: "13.0.0",
+          }),
+        },
+      });
+      render(<App />);
+
+      await screen.findByRole("link", { name: /Download for Windows/i });
+      act(() => {
+        simulatePlatform("macos-arm64");
+      });
+      await screen.findByRole("link", { name: /Download for Apple Silicon/i });
+
+      act(() => {
+        resetPlatformSimulation();
+      });
+
+      await waitFor(() => {
+        expect(screen.getByRole("link", { name: /Download for Windows/i })).toHaveAttribute(
+          "href",
+          `${ASSET_URL}/Aseprite-Installer-Windows-x64-setup.exe`,
+        );
+      });
+      expect(document.querySelector(".site-page")).toHaveAttribute(
+        "data-platform-simulation",
+        "none",
+      );
+      expect(document.querySelector(".site-detection-note")).toHaveTextContent(
+        "Windows x64 detected · NSIS installer recommended",
+      );
+      expect(document.querySelector(".site-detection-note")).not.toHaveTextContent(
+        "Simulation",
+      );
+    });
+
+    it("keeps a simulation authoritative when async client hints resolve later", async () => {
+      type WindowsHints = {
+        architecture: string;
+        bitness: string;
+        platformVersion: string;
+      };
+      let resolveHints: (value: WindowsHints) => void = () => undefined;
+      const highEntropyValues = new Promise<WindowsHints>((resolve) => {
+        resolveHints = resolve;
+      });
+      mockNavigator({
+        userAgent:
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/140 Safari/537.36",
+        platform: "Win32",
+        maxTouchPoints: 0,
+        userAgentData: {
+          platform: "Windows",
+          mobile: false,
+          getHighEntropyValues: vi.fn().mockReturnValue(highEntropyValues),
+        },
+      });
+      render(<App />);
+
+      act(() => {
+        simulatePlatform("linux-x64");
+      });
+      await screen.findByRole("link", { name: /Download AppImage/i });
+
+      await act(async () => {
+        resolveHints({
+          architecture: "x86",
+          bitness: "64",
+          platformVersion: "13.0.0",
+        });
+        await highEntropyValues;
+      });
+
+      expect(screen.getByRole("tab", { name: "Linux" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      expect(screen.getByRole("link", { name: /Download AppImage/i })).toHaveAttribute(
+        "data-download-target",
+        "linux-x64",
+      );
+      expect(document.querySelector(".site-page")).toHaveAttribute(
+        "data-platform-simulation",
+        "linux-x64",
+      );
+    });
+
+    it("does not change a focused CTA until focus leaves it", async () => {
+      mockNavigator({ userAgent: "", platform: "", maxTouchPoints: 0 });
+      render(<App />);
+      const chooser = screen.getByRole("link", { name: /Choose your platform/i });
+      chooser.focus();
+
+      act(() => {
+        simulatePlatform("macos-arm64");
+      });
+
+      expect(chooser).toHaveFocus();
+      expect(chooser).toHaveAttribute("href", "#install");
+      expect(chooser).toHaveAttribute("data-download-target", "picker");
+      expect(document.querySelector(".site-page")).toHaveAttribute(
+        "data-platform-simulation",
+        "macos-arm64",
+      );
+
+      fireEvent.blur(chooser);
+      await waitFor(() => {
+        expect(screen.getByRole("link", { name: /Download for Apple Silicon/i })).toHaveAttribute(
+          "data-download-target",
+          "macos-arm64",
+        );
+      });
+    });
+
+    it("keeps a focused CTA stable while a simulation clears a manual choice", async () => {
+      mockNavigator({ userAgent: "", platform: "", maxTouchPoints: 0 });
+      render(<App />);
+      fireEvent.click(screen.getByRole("tab", { name: "Windows" }));
+      const manualChooser = await screen.findByRole("link", {
+        name: /Choose a Windows package/i,
+      });
+      manualChooser.focus();
+
+      act(() => {
+        simulatePlatform("linux-x64");
+      });
+
+      expect(manualChooser).toHaveFocus();
+      expect(manualChooser).toHaveAttribute("href", "#install");
+      expect(manualChooser).toHaveAttribute("data-download-target", "picker");
+
+      fireEvent.blur(manualChooser);
+      await waitFor(() => {
+        expect(screen.getByRole("link", { name: /Download AppImage/i })).toHaveAttribute(
+          "data-download-target",
+          "linux-x64",
+        );
+      });
+    });
+
+    it("keeps the CTA stable during a pointer gesture and applies the latest simulation", async () => {
+      mockNavigator({ userAgent: "", platform: "", maxTouchPoints: 0 });
+      render(<App />);
+      const chooser = screen.getByRole("link", { name: /Choose your platform/i });
+
+      fireEvent.pointerDown(chooser);
+      act(() => {
+        simulatePlatform("windows-x64");
+        simulatePlatform("linux-x64");
+      });
+
+      expect(chooser).toHaveAttribute("href", "#install");
+      expect(chooser).toHaveAttribute("data-download-target", "picker");
+      expect(document.querySelector(".site-page")).toHaveAttribute(
+        "data-platform-simulation",
+        "linux-x64",
+      );
+
+      fireEvent.pointerCancel(chooser);
+      await waitFor(() => {
+        expect(screen.getByRole("link", { name: /Download AppImage/i })).toHaveAttribute(
+          "data-download-target",
+          "linux-x64",
+        );
+      });
+    });
+
+    it("releases the CTA guard when the pointer is released outside the link", async () => {
+      mockNavigator({ userAgent: "", platform: "", maxTouchPoints: 0 });
+      render(<App />);
+      const chooser = screen.getByRole("link", { name: /Choose your platform/i });
+
+      fireEvent.pointerDown(chooser);
+      act(() => {
+        simulatePlatform("linux-x64");
+      });
+
+      expect(chooser).toHaveAttribute("href", "#install");
+      expect(chooser).toHaveAttribute("data-download-target", "picker");
+
+      fireEvent.pointerUp(window);
+
+      await waitFor(() => {
+        expect(screen.getByRole("link", { name: /Download AppImage/i })).toHaveAttribute(
+          "data-download-target",
+          "linux-x64",
+        );
+      });
     });
   });
 

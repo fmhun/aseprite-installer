@@ -1049,6 +1049,16 @@ summary:focus-visible {
   font-size: 8px;
 }
 
+.site-page:not([data-platform-simulation="none"]) .site-detection-note {
+  color: var(--accent-text);
+  background: var(--raised);
+  box-shadow: inset 4px 0 0 var(--accent);
+}
+
+.site-page:not([data-platform-simulation="none"]) .site-detection-note span {
+  color: var(--accent-text);
+}
+
 .site-platform-tabs {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
