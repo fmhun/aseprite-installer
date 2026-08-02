@@ -59,7 +59,7 @@ describe("prerequisite help guides", () => {
     const guide = getPrerequisiteGuide("future-platform-tool");
 
     expect(guide.links[0]?.url).toBe(
-      "https://github.com/aseprite/aseprite/blob/main/INSTALL.md",
+      "https://github.com/aseprite/aseprite/blob/35c35e645f68b6a2d39808c9e7b193d3144f100d/INSTALL.md",
     );
   });
 

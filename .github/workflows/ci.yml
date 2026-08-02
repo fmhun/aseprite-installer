@@ -32,6 +32,10 @@ jobs:
           node-version: 24.15.0
           cache: npm
       - run: npm ci
+      - name: Validate Aseprite upstream contract
+        run: |
+          node --check scripts/check-aseprite-upstream.mjs
+          node scripts/check-aseprite-upstream.mjs --validate-only
       - run: npm run lint
       - run: npm test
       - run: npm run build

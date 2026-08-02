@@ -22,7 +22,7 @@ Windows ARM64, Linux ARM64, Windows 10, and Ubuntu 20.04 are not supported by th
 ## What it does
 
 - Detects managed, manual, Steam, and package-manager Aseprite installations without taking ownership of read-only copies.
-- Lists verified Aseprite 1.3 source releases from GitHub, with stable releases shown by default.
+- Lists official Aseprite 1.3 source releases no newer than the latest compatibility-reviewed release, with stable releases shown by default.
 - Checks the native compiler, SDK, CMake, Ninja, architecture, filesystem behavior, and free disk space before making changes.
 - Downloads official Aseprite source and Skia release assets into a local cache and verifies their pinned sizes and SHA-256 digests.
 - Configures and compiles Aseprite locally with CMake and Ninja; the installer never uploads the result.
@@ -71,6 +71,7 @@ All platforms need roughly 6 GB of temporary free space plus room for the manage
 - Xcode with its macOS SDK and command-line tools
 - CMake 3.20 or newer
 - Ninja 1.10 or newer
+- The standard macOS `/usr/bin/curl` and `/usr/bin/unzip` utilities used by the reviewed build script
 
 If a safe Homebrew installation is already present, the user may explicitly authorize the installer’s CMake/Ninja action; the tools can also be installed manually. The installer does not install Homebrew or Xcode.
 
@@ -125,6 +126,7 @@ npm run lint
 npm test
 npm run test:apt # Linux only; requires apt-utils, dpkg-dev, GnuPG, ShellCheck, and xz-utils
 npm run build
+node scripts/check-aseprite-upstream.mjs --validate-only
 cargo fmt --manifest-path src-tauri/Cargo.toml --check
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
 cargo test --manifest-path src-tauri/Cargo.toml --locked
@@ -172,9 +174,13 @@ On macOS, set `asset` to the downloaded DMG or app archive and use `grep -F "  $
 
 ## Official references
 
-- [Aseprite installation instructions](https://github.com/aseprite/aseprite/blob/main/INSTALL.md)
+- [Reviewed Aseprite installation instructions (v1.3.18.1 at `35c35e6`)](https://github.com/aseprite/aseprite/blob/35c35e645f68b6a2d39808c9e7b193d3144f100d/INSTALL.md)
+- [Current upstream installation instructions](https://github.com/aseprite/aseprite/blob/main/INSTALL.md)
+- [Reviewed automatic build script (v1.3.18.1 at `35c35e6`)](https://github.com/aseprite/aseprite/blob/35c35e645f68b6a2d39808c9e7b193d3144f100d/build.sh)
 - [Aseprite EULA](https://github.com/aseprite/aseprite/blob/main/EULA.txt)
 - [Aseprite releases](https://github.com/aseprite/aseprite/releases)
 - [Aseprite theme documentation](https://www.aseprite.org/docs/extensions/themes/)
+
+The exact reviewed release, commit, source digest, and upstream file identities are recorded in [`upstream/aseprite-compatibility.json`](upstream/aseprite-compatibility.json). [`docs/UPSTREAM_COMPATIBILITY.md`](docs/UPSTREAM_COMPATIBILITY.md) documents the weekly drift watcher and maintainer review procedure. Releases above the recorded boundary remain unavailable until that review is complete; Linux and Windows may apply an additional pinned-Skia compatibility limit.
 
 This project is not affiliated with, endorsed by, or supported by Igara Studio or GitHub.

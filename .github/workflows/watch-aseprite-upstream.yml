@@ -1,0 +1,82 @@
+name: Watch Aseprite upstream
+
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: aseprite-upstream-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: Check compatibility contract
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.15.0
+
+      - name: Compare the reviewed contract with upstream
+        id: check
+        run: >-
+          node scripts/check-aseprite-upstream.mjs
+          --output "$RUNNER_TEMP/aseprite-upstream-report.md"
+
+      - name: Reconcile the compatibility issue
+        env:
+          DRIFT: ${{ steps.check.outputs.drift }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          REPORT_PATH: ${{ runner.temp }}/aseprite-upstream-report.md
+        shell: bash
+        run: |
+          set -euo pipefail
+          marker='<!-- aseprite-upstream-watch:v1 -->'
+          label='upstream-compatibility'
+          title='[Upstream] Review Aseprite compatibility'
+
+          gh label create "$label" \
+            --color B60205 \
+            --description 'Aseprite installation or build contract changed upstream' \
+            --force
+
+          issues_json="$(gh api --paginate --slurp "/repos/${GH_REPO}/issues?state=open&per_page=100")"
+          matches_json="$(jq --arg marker "$marker" 'add | [.[] | select(.pull_request == null) | select(.user.login == "github-actions[bot]") | select((.body // "") | contains($marker)) | {number, title, body, labels: [.labels[].name]}] | sort_by(.number)' <<<"$issues_json")"
+
+          issue_number="$(jq -r '.[0].number // empty' <<<"$matches_json")"
+          while IFS= read -r duplicate_number; do
+            [[ -z "$duplicate_number" ]] && continue
+            gh issue close "$duplicate_number" \
+              --comment 'Closing this duplicate; the oldest open issue with the stable watcher marker remains canonical.' \
+              --reason completed
+          done < <(jq -r '.[1:][].number' <<<"$matches_json")
+
+          if [[ "$DRIFT" == 'true' ]]; then
+            if [[ -z "$issue_number" ]]; then
+              gh issue create --title "$title" --label "$label" --body-file "$REPORT_PATH"
+            else
+              current_title="$(jq -r '.[0].title' <<<"$matches_json")"
+              current_body="$(jq -r '.[0].body' <<<"$matches_json")"
+              has_label="$(jq --arg label "$label" '.[0].labels | contains([$label])' <<<"$matches_json")"
+              desired_body="$(<"$REPORT_PATH")"
+              if [[ "$current_title" != "$title" || "$current_body" != "$desired_body" || "$has_label" != 'true' ]]; then
+                gh issue edit "$issue_number" --title "$title" --add-label "$label" --body-file "$REPORT_PATH"
+              fi
+            fi
+          elif [[ -n "$issue_number" ]]; then
+            gh issue close "$issue_number" \
+              --comment 'The repository manifest now matches upstream. Closing this automated review issue.' \
+              --reason completed
+          fi

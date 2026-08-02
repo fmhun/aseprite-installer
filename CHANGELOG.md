@@ -4,6 +4,11 @@ All notable changes to Aseprite Installer are documented here.
 
 ## Unreleased
 
+- Recorded the exact Aseprite release, source digest, and upstream installation/build-file identities reviewed by the installer.
+- Blocked Aseprite releases above the reviewed compatibility boundary while preserving the stricter pinned-Skia gate on Linux and Windows.
+- Added a weekly upstream drift watcher that reconciles one maintainer review issue without compiling or redistributing Aseprite.
+- Linked prerequisite guidance to the immutable reviewed installation instructions and clarified the latest reviewed release in the interface.
+
 ## 0.2.0 — 2026-08-01
 
 - Added native Windows 11 x64 support with a current-user NSIS installer and an MSI for managed deployment.

@@ -72,7 +72,7 @@ const messages = {
   restore: "Restore previous",
   uninstall: "Uninstall",
   includePrereleases: "Include beta and RC releases",
-  latest: "Latest",
+  latest: "Latest reviewed",
   beta: "Pre-release",
   selectRelease: "Select a release",
   releaseTag: "GitHub tag {tag}",

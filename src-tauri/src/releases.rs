@@ -1,5 +1,6 @@
 use crate::error::{AppResult, InstallerError};
 use crate::models::ReleaseInfo;
+use crate::upstream::{compatibility_contract, CompatibilityContract};
 use reqwest::header::{ETAG, IF_NONE_MATCH};
 use serde::Deserialize;
 use std::path::Path;
@@ -214,15 +215,33 @@ fn parse_releases(json: &str, include_prereleases: bool) -> AppResult<Vec<Releas
             error.to_string(),
         )
     })?;
+    let contract = compatibility_contract()?;
+    let reviewed_through = parse_supported_version(&contract.reviewed_through)
+        .filter(|version| !version.is_prerelease())
+        .ok_or_else(|| {
+            InstallerError::new(
+                "compatibilityData",
+                "The bundled Aseprite compatibility policy is invalid.",
+            )
+        })?;
 
     let mut parsed = releases
         .into_iter()
         .filter(|release| !release.draft)
         .filter_map(|release| {
             let tag_version = parse_supported_version(&release.tag_name)?;
-            let asset = release.assets.into_iter().find(valid_source_asset)?;
+            if tag_version > reviewed_through {
+                return None;
+            }
+            let asset = release.assets.into_iter().find(|asset| {
+                valid_source_asset(asset, &release.tag_name)
+                    && baseline_asset_matches(asset, &release.tag_name, &contract)
+            })?;
             let source_version = source_build_requirements(&asset.name)?;
             let source_version = parse_supported_version(source_version.source_version)?;
+            if source_version > reviewed_through {
+                return None;
+            }
             let prerelease =
                 release.prerelease || tag_version.is_prerelease() || source_version.is_prerelease();
             if prerelease && !include_prereleases {
@@ -346,7 +365,7 @@ fn parse_supported_version(tag: &str) -> Option<VersionKey> {
     })
 }
 
-fn valid_source_asset(asset: &GitHubAsset) -> bool {
+fn valid_source_asset(asset: &GitHubAsset, release_tag: &str) -> bool {
     if asset.size == 0 || source_build_requirements(&asset.name).is_none() {
         return false;
     }
@@ -364,9 +383,31 @@ fn valid_source_asset(asset: &GitHubAsset) -> bool {
     };
     url.scheme() == "https"
         && url.host_str() == Some("github.com")
-        && url
-            .path()
-            .starts_with("/aseprite/aseprite/releases/download/")
+        && url.port().is_none()
+        && url.username().is_empty()
+        && url.password().is_none()
+        && url.query().is_none()
+        && url.fragment().is_none()
+        && url.path()
+            == format!(
+                "/aseprite/aseprite/releases/download/{release_tag}/{}",
+                asset.name
+            )
+}
+
+fn baseline_asset_matches(
+    asset: &GitHubAsset,
+    release_tag: &str,
+    contract: &CompatibilityContract,
+) -> bool {
+    if release_tag == contract.baseline_tag || asset.name == contract.baseline_asset_name {
+        release_tag == contract.baseline_tag
+            && asset.name == contract.baseline_asset_name
+            && asset.digest.as_deref() == Some(contract.baseline_asset_digest.as_str())
+            && asset.size == contract.baseline_asset_size
+    } else {
+        true
+    }
 }
 
 fn source_version_key(release: &ReleaseInfo) -> Option<VersionKey> {
@@ -382,7 +423,7 @@ mod tests {
     use std::thread;
 
     fn release_fixture() -> String {
-        let digest = format!("sha256:{}", "a".repeat(64));
+        let contract = compatibility_contract().unwrap();
         serde_json::json!([{
             "tag_name": "v1.3.18.1",
             "name": "Aseprite v1.3.18.1",
@@ -392,8 +433,8 @@ mod tests {
             "assets": [{
                 "name": "Aseprite-v1.3.18.1-Source.zip",
                 "browser_download_url": "https://github.com/aseprite/aseprite/releases/download/v1.3.18.1/Aseprite-v1.3.18.1-Source.zip",
-                "digest": digest,
-                "size": 10
+                "digest": contract.baseline_asset_digest,
+                "size": contract.baseline_asset_size
             }]
         }])
         .to_string()
@@ -436,7 +477,7 @@ mod tests {
 
     #[test]
     fn filters_drafts_legacy_versions_and_unverified_assets() {
-        let digest = format!("sha256:{}", "a".repeat(64));
+        let contract = compatibility_contract().unwrap();
         let fixture = serde_json::json!([
             {
                 "tag_name": "v1.3.18.1",
@@ -447,8 +488,8 @@ mod tests {
                 "assets": [{
                     "name": "Aseprite-v1.3.18.1-Source.zip",
                     "browser_download_url": "https://github.com/aseprite/aseprite/releases/download/v1.3.18.1/Aseprite-v1.3.18.1-Source.zip",
-                    "digest": digest,
-                    "size": 10
+                    "digest": contract.baseline_asset_digest,
+                    "size": contract.baseline_asset_size
                 }]
             },
             {
@@ -464,6 +505,111 @@ mod tests {
         assert_eq!(releases.len(), 1);
         assert!(releases[0].latest);
         assert_eq!(releases[0].tag, "v1.3.18.1");
+    }
+
+    #[test]
+    fn blocks_release_tags_and_source_assets_beyond_the_reviewed_boundary() {
+        let digest = format!("sha256:{}", "a".repeat(64));
+        let release = |tag: &str, source: &str| {
+            serde_json::json!({
+                "tag_name": tag,
+                "name": tag,
+                "published_at": "2026-08-01T00:00:00Z",
+                "prerelease": false,
+                "draft": false,
+                "assets": [{
+                    "name": format!("Aseprite-{source}-Source.zip"),
+                    "browser_download_url": format!(
+                        "https://github.com/aseprite/aseprite/releases/download/{tag}/Aseprite-{source}-Source.zip"
+                    ),
+                    "digest": digest,
+                    "size": 10
+                }]
+            })
+        };
+        let fixture = serde_json::json!([
+            release("v1.3.19", "v1.3.19"),
+            release("v1.3.18", "v1.3.19"),
+            release("v1.3.17", "v1.3.17")
+        ]);
+
+        let releases = parse_releases(&fixture.to_string(), false).unwrap();
+
+        assert_eq!(releases.len(), 1);
+        assert_eq!(releases[0].tag, "v1.3.17");
+        assert!(releases[0].latest);
+    }
+
+    #[test]
+    fn rejects_a_changed_digest_for_the_reviewed_baseline() {
+        let mut fixture: serde_json::Value = serde_json::from_str(&release_fixture()).unwrap();
+        fixture[0]["assets"][0]["digest"] = serde_json::json!(format!("sha256:{}", "b".repeat(64)));
+
+        let error = parse_releases(&fixture.to_string(), false).unwrap_err();
+
+        assert_eq!(error.code, "noReleases");
+    }
+
+    #[test]
+    fn selects_the_pinned_baseline_asset_when_an_invalid_duplicate_comes_first() {
+        let mut fixture: serde_json::Value = serde_json::from_str(&release_fixture()).unwrap();
+        let pinned = fixture[0]["assets"][0].clone();
+        let mut changed = pinned.clone();
+        changed["digest"] = serde_json::json!(format!("sha256:{}", "b".repeat(64)));
+        fixture[0]["assets"] = serde_json::json!([changed, pinned]);
+
+        let releases = parse_releases(&fixture.to_string(), false).unwrap();
+
+        assert_eq!(releases.len(), 1);
+        assert_eq!(releases[0].tag, "v1.3.18.1");
+    }
+
+    #[test]
+    fn rejects_the_baseline_source_identity_under_a_different_release_tag() {
+        let contract = compatibility_contract().unwrap();
+        let fixture = serde_json::json!([{
+            "tag_name": "v1.3.18",
+            "name": "Mismatched baseline source",
+            "published_at": "2026-01-01T00:00:00Z",
+            "prerelease": false,
+            "draft": false,
+            "assets": [{
+                "name": contract.baseline_asset_name,
+                "browser_download_url": "https://github.com/aseprite/aseprite/releases/download/v1.3.18/Aseprite-v1.3.18.1-Source.zip",
+                "digest": format!("sha256:{}", "b".repeat(64)),
+                "size": contract.baseline_asset_size
+            }]
+        }]);
+
+        let error = parse_releases(&fixture.to_string(), false).unwrap_err();
+
+        assert_eq!(error.code, "noReleases");
+    }
+
+    #[test]
+    fn preserves_the_supported_release_and_source_version_mismatch() {
+        let digest = format!("sha256:{}", "a".repeat(64));
+        let fixture = serde_json::json!([{
+            "tag_name": "v1.3.15.4",
+            "name": "Aseprite v1.3.15.5",
+            "published_at": "2025-01-01T00:00:00Z",
+            "prerelease": false,
+            "draft": false,
+            "assets": [{
+                "name": "Aseprite-v1.3.15.5-Source.zip",
+                "browser_download_url": "https://github.com/aseprite/aseprite/releases/download/v1.3.15.4/Aseprite-v1.3.15.5-Source.zip",
+                "digest": digest,
+                "size": 10
+            }]
+        }]);
+
+        let releases = parse_releases(&fixture.to_string(), false).unwrap();
+
+        assert_eq!(releases[0].tag, "v1.3.15.4");
+        assert_eq!(
+            releases[0].source_asset_name,
+            "Aseprite-v1.3.15.5-Source.zip"
+        );
     }
 
     #[test]
@@ -542,10 +688,10 @@ mod tests {
         };
         let fixture = serde_json::Value::Array(vec![
             release("v1.3.15.4", "v1.3.15.5", false),
-            release("v1.3.19-beta2", "v1.3.19-beta10", true),
-            release("v1.3.19-beta9", "v1.3.19-beta2", true),
-            release("v1.3.19-rc2", "v1.3.19-rc2", true),
-            release("v1.3.19", "v1.3.19", false),
+            release("v1.3.18-beta2", "v1.3.18-beta10", true),
+            release("v1.3.18-beta9", "v1.3.18-beta2", true),
+            release("v1.3.18-rc2", "v1.3.18-rc2", true),
+            release("v1.3.18", "v1.3.18", false),
         ]);
 
         let releases = parse_releases(&fixture.to_string(), true).unwrap();
@@ -555,10 +701,10 @@ mod tests {
                 .map(|release| release.tag.as_str())
                 .collect::<Vec<_>>(),
             vec![
-                "v1.3.19",
-                "v1.3.19-rc2",
-                "v1.3.19-beta2",
-                "v1.3.19-beta9",
+                "v1.3.18",
+                "v1.3.18-rc2",
+                "v1.3.18-beta2",
+                "v1.3.18-beta9",
                 "v1.3.15.4"
             ]
         );
@@ -574,7 +720,14 @@ mod tests {
             digest: Some(format!("sha256:{}", "a".repeat(64))),
             size: 1,
         };
-        assert!(!valid_source_asset(&asset));
+        assert!(!valid_source_asset(&asset, "v1.3.18.1"));
+
+        let wrong_path = GitHubAsset {
+            browser_download_url:
+                "https://github.com/aseprite/aseprite/releases/download/v1.3.18.1/other.zip".into(),
+            ..asset
+        };
+        assert!(!valid_source_asset(&wrong_path, "v1.3.18.1"));
     }
 
     #[test]
