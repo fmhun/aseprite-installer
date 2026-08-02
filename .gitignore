@@ -3,7 +3,6 @@ dist/
 dist-site/
 dist-site-ssr/
 target/
-src-tauri/target/
 *.tsbuildinfo
 vite.config.js
 vite.config.d.ts
