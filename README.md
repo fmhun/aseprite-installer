@@ -15,7 +15,7 @@ The official paid edition is the recommended way to get Aseprite: it funds Igara
 | --- | --- | --- |
 | macOS | macOS 15.2+, Apple Silicon and Intel | Architecture-specific app archive and DMG |
 | Windows | Windows 11 x64 | NSIS current-user installer and MSI for managed deployment |
-| Linux | x86_64, Ubuntu 22.04/Debian 12 or a modern compatible distribution | AppImage, deb, and rpm |
+| Linux | x86_64, Ubuntu 22.04/Debian 12 or a modern compatible distribution | Signed APT repository, AppImage, deb, and rpm |
 
 Windows ARM64, Linux ARM64, Windows 10, and Ubuntu 20.04 are not supported by the desktop installer. The AppImage is the least invasive Linux package. Do not install the NSIS and MSI packages side by side: use NSIS for a personal installation or MSI for centrally managed deployment.
 
@@ -30,7 +30,24 @@ Windows ARM64, Linux ARM64, Windows 10, and Ubuntu 20.04 are not supported by th
 - Integrates a managed copy with Applications on macOS, the current user's Start menu on Windows, or the current user's desktop menu on Linux.
 - Supports updates, downgrades, reinstalls, cancellation, backup restore, and recoverable uninstall while preserving artwork and preferences.
 
-Aseprite Installer itself has no built-in updater. Install a newer package from this repository to update the installer.
+Aseprite Installer itself has no built-in updater. Debian and Ubuntu installations made through the signed APT repository are updated by APT; direct packages must be replaced with a newer release.
+
+## Linux installation
+
+On Debian, Ubuntu, and compatible x86_64 derivatives, the shortest supported installation path is:
+
+```bash
+curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 https://fmhun.github.io/aseprite-installer/install-apt.sh | sh
+```
+
+The public bootstrap verifies the pinned repository key and configuration, registers a scoped deb822 source using `Signed-By`, pins this package to the project’s GitHub Pages origin, installs `aseprite-installer`, and never launches it. After that initial setup, normal APT commands handle installation and updates:
+
+```bash
+sudo apt update
+sudo apt install aseprite-installer
+```
+
+The repository is generated from verified GitHub Release `.deb` assets and published atomically with the landing page. Its [repository information](https://fmhun.github.io/aseprite-installer/apt/README.txt) records the endpoint and OpenPGP archive-key fingerprint: `63C4 3155 4A41 5827 49BB AD5E F2AB 2099 C8DF 4DD3`. The AppImage and direct deb/rpm assets remain available from GitHub Releases as portable or manual fallbacks.
 
 ## Privacy and safety
 
@@ -106,6 +123,7 @@ Quality checks:
 ```bash
 npm run lint
 npm test
+npm run test:apt # Linux only; requires apt-utils, dpkg-dev, GnuPG, ShellCheck, and xz-utils
 npm run build
 cargo fmt --manifest-path src-tauri/Cargo.toml --check
 cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
@@ -140,7 +158,7 @@ Release packages are intentionally not backed by commercial signing certificates
 
 - macOS apps are ad-hoc signed but not notarized, so Gatekeeper may require Control-clicking the app and choosing **Open** the first time.
 - Windows packages are not Authenticode-signed, so SmartScreen may warn. Verify the checksum and provenance before choosing **More info → Run anyway**.
-- Linux packages are unsigned. The AppImage may need `chmod +x` after downloading.
+- Direct Linux release packages are unsigned. The AppImage may need `chmod +x` after downloading. The Debian/Ubuntu APT channel instead authenticates its `InRelease` metadata, package index, and package hashes with the dedicated archive key above.
 
 After downloading an asset and `SHA256SUMS`, verify that individual asset by filtering its exact manifest entry. For example on Linux:
 

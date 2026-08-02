@@ -9,6 +9,7 @@
     "build": "tsc -b && vite build",
     "build:site": "tsc -p site/tsconfig.json --pretty false && vite build --config vite.site.config.ts && vite build --config vite.site.config.ts --ssr src/entry-server.tsx --outDir ../dist-site-ssr && node scripts/prerender-site.mjs && node scripts/validate-site-seo.mjs",
     "test": "vitest run",
+    "test:apt": "bash .github/scripts/test-apt-repository.sh",
     "test:site": "vitest run --config vite.site.config.ts",
     "test:seo": "node scripts/validate-site-seo.mjs",
     "test:watch": "vitest",

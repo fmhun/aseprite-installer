@@ -7,41 +7,59 @@ on:
       - "site/**"
       - "assets/icons/**"
       - "src/assets/fonts/**"
+      - "packaging/apt/**"
+      - ".github/scripts/*apt*"
       - "vite.site.config.ts"
       - "scripts/prerender-site.mjs"
       - "scripts/validate-site-seo.mjs"
       - "package.json"
       - "package-lock.json"
       - "tsconfig.app.json"
+      - "README.md"
+      - "SECURITY.md"
       - ".github/workflows/pages.yml"
   pull_request:
     paths:
       - "site/**"
       - "assets/icons/**"
       - "src/assets/fonts/**"
+      - "packaging/apt/**"
+      - ".github/scripts/*apt*"
       - "vite.site.config.ts"
       - "scripts/prerender-site.mjs"
       - "scripts/validate-site-seo.mjs"
       - "package.json"
       - "package-lock.json"
       - "tsconfig.app.json"
+      - "README.md"
+      - "SECURITY.md"
       - ".github/workflows/pages.yml"
+  workflow_run:
+    workflows: [Release]
+    types: [completed]
+  schedule:
+    - cron: "23 4 * * 1"
   workflow_dispatch:
 
 concurrency:
-  group: pages-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.ref }}
-  cancel-in-progress: true
+  group: ${{ github.event_name == 'pull_request' && format('pages-pr-{0}', github.event.pull_request.number) || 'pages-production' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
   build:
     name: Build site
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     permissions:
       contents: read
-      pages: read
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24.15.0
@@ -49,19 +67,167 @@ jobs:
       - run: npm ci
       - run: npm run test:site
       - run: npm run build:site
+      - name: Upload built site
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pages-site
+          path: dist-site
+          if-no-files-found: error
+          retention-days: 1
+
+  apt-test:
+    name: Test APT repository
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+      - name: Install APT repository test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            apt-utils \
+            dpkg-dev \
+            gnupg \
+            shellcheck \
+            xz-utils
+      - run: bash .github/scripts/test-apt-repository.sh
+
+  apt:
+    name: Build production APT repository
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') &&
+      (github.event_name == 'workflow_run' || github.ref == 'refs/heads/main')
+    needs: apt-test
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    permissions:
+      attestations: read
+      contents: read
+    environment:
+      name: apt-signing
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+      - name: Install APT repository tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends \
+            apt-utils \
+            dpkg-dev \
+            gnupg \
+            xz-utils
+      - name: Download verified stable deb releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/download-apt-release-packages.sh apt-input 10
+      - name: Import the protected key, build, and verify the repository
+        env:
+          APT_REPOSITORY_SIGNING_KEY: ${{ secrets.APT_REPOSITORY_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          apt_gnupg_home="$RUNNER_TEMP/aseprite-installer-apt-gnupg"
+          cleanup() {
+            GNUPGHOME="$apt_gnupg_home" gpgconf --kill gpg-agent >/dev/null 2>&1 || true
+            if [[ -d "$apt_gnupg_home" ]]; then
+              rm -r -- "$apt_gnupg_home"
+            fi
+          }
+          trap cleanup EXIT
+          install -d -m 0700 "$apt_gnupg_home"
+          export GNUPGHOME="$apt_gnupg_home"
+          if [[ -z "$APT_REPOSITORY_SIGNING_KEY" ]]; then
+            echo "APT_REPOSITORY_SIGNING_KEY is not configured in the apt-signing environment." >&2
+            exit 1
+          fi
+          printf '%s' "$APT_REPOSITORY_SIGNING_KEY" | gpg --batch --import
+          unset APT_REPOSITORY_SIGNING_KEY
+          apt_fingerprint="$(tr -d '[:space:]' < packaging/apt/archive-key-fingerprint.txt)"
+          actual_fingerprint="$(
+            gpg --batch --with-colons --list-secret-keys \
+              | awk -F: '$1 == "fpr" { print $10; exit }'
+          )"
+          if [[ "$actual_fingerprint" != "$apt_fingerprint" ]]; then
+            echo "Imported APT signing key does not match the committed fingerprint." >&2
+            exit 1
+          fi
+          bash .github/scripts/build-apt-repository.sh \
+            apt-input \
+            apt-output \
+            site/public/apt/aseprite-installer-archive-keyring.asc \
+            site/public/apt/aseprite-installer.sources \
+            site/public/apt/aseprite-installer.pref \
+            "$apt_fingerprint"
+          bash .github/scripts/verify-apt-repository.sh \
+            apt-output \
+            site/public/apt/aseprite-installer-archive-keyring.asc \
+            site/public/apt/aseprite-installer.sources \
+            site/public/apt/aseprite-installer.pref \
+            "$apt_fingerprint"
+      - name: Upload signed APT repository
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: pages-apt
+          path: apt-output
+          if-no-files-found: error
+          retention-days: 1
+
+  pages:
+    name: Assemble GitHub Pages
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') &&
+      (github.event_name == 'workflow_run' || github.ref == 'refs/heads/main')
+    needs: [build, apt]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    steps:
+      - name: Download built site
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: pages-site
+          path: dist-site
+      - name: Download signed APT repository
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: pages-apt
+          path: dist-site/apt
+      - name: Enforce Pages publication limits and trust files
+        run: |
+          set -euo pipefail
+          test -f dist-site/index.html
+          test -f dist-site/install-apt.sh
+          test -f dist-site/apt/dists/stable/InRelease
+          test -f dist-site/apt/aseprite-installer-archive-keyring.asc
+          if find dist-site -type l -print -quit | grep -q .; then
+            echo "GitHub Pages output must not contain symlinks." >&2
+            exit 1
+          fi
+          pages_size_kib="$(du -sk dist-site | awk '{print $1}')"
+          if (( pages_size_kib > 950000 )); then
+            echo "Pages output is too close to GitHub's 1 GB published-site limit." >&2
+            exit 1
+          fi
       - name: Configure GitHub Pages
-        if: github.ref == 'refs/heads/main'
         uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6
       - name: Upload GitHub Pages artifact
-        if: github.ref == 'refs/heads/main'
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: ./dist-site
 
   deploy:
-    name: Deploy site
-    if: github.ref == 'refs/heads/main'
-    needs: build
+    name: Deploy site and APT repository
+    needs: pages
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     permissions:

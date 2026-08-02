@@ -1,4 +1,5 @@
 import { access, readFile, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -49,13 +50,22 @@ function decodeHtmlMetadata(value) {
   return value.replaceAll("&amp;", "&");
 }
 
-const [html, robots, sitemap, htmlStats, sourceStyles, readme] = await Promise.all([
+function sha256(value) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+const [html, robots, sitemap, htmlStats, sourceStyles, readme, aptBootstrap, aptSources, aptPreferences, aptPublicKey, aptFingerprint] = await Promise.all([
   readFile(join(outputDirectory, "index.html"), "utf8"),
   readFile(join(outputDirectory, "robots.txt"), "utf8"),
   readFile(join(outputDirectory, "sitemap.xml"), "utf8"),
   stat(join(outputDirectory, "index.html")),
   readFile(join(repositoryRoot, "site/src/styles.css"), "utf8"),
   readFile(join(repositoryRoot, "README.md"), "utf8"),
+  readFile(join(outputDirectory, "install-apt.sh"), "utf8"),
+  readFile(join(outputDirectory, "apt/aseprite-installer.sources"), "utf8"),
+  readFile(join(outputDirectory, "apt/aseprite-installer.pref"), "utf8"),
+  readFile(join(outputDirectory, "apt/aseprite-installer-archive-keyring.asc"), "utf8"),
+  readFile(join(repositoryRoot, "packaging/apt/archive-key-fingerprint.txt"), "utf8"),
 ]);
 
 invariant(htmlStats.size < 150_000, "the initial HTML exceeds the 150 KB crawl budget");
@@ -76,6 +86,12 @@ invariant(
     html.includes("Aseprite-Installer-Linux-x86_64.AppImage"),
   "the verified Linux installation path is missing",
 );
+invariant(
+  html.includes("https://fmhun.github.io/aseprite-installer/install-apt.sh") &&
+    html.includes("signed APT repository") &&
+    html.includes("native updates"),
+  "the signed APT installation path is missing",
+);
 invariant(html.includes("Which installer should I choose?"), "the platform package FAQ is missing");
 invariant(html.includes("Does the installer distribute Aseprite?"), "the FAQ is missing from the initial HTML");
 invariant(html.includes("Aseprite remains subject to its own EULA"), "the Aseprite license distinction is missing");
@@ -87,6 +103,37 @@ invariant(
   "the README does not point every platform to the latest release",
 );
 invariant(!readme.includes("Aseprite-Installer-macOS-Universal"), "the README still references the retired universal DMG");
+const pinnedArchiveKeySha256 = aptBootstrap.match(/^archive_key_sha256="([a-f0-9]{64})"$/m)?.[1];
+const pinnedSourcesSha256 = aptBootstrap.match(/^sources_sha256="([a-f0-9]{64})"$/m)?.[1];
+const pinnedPreferencesSha256 = aptBootstrap.match(/^preferences_sha256="([a-f0-9]{64})"$/m)?.[1];
+invariant(
+  pinnedArchiveKeySha256 === sha256(aptPublicKey),
+  "the APT bootstrap does not pin the exact committed archive key",
+);
+invariant(
+  pinnedSourcesSha256 === sha256(aptSources),
+  "the APT bootstrap does not pin the exact committed source definition",
+);
+invariant(
+  pinnedPreferencesSha256 === sha256(aptPreferences) &&
+    aptPreferences.includes('Pin: origin "fmhun.github.io"') &&
+    aptPreferences.includes("Package: aseprite-installer"),
+  "the APT bootstrap does not pin the package-specific GitHub Pages origin policy",
+);
+invariant(
+  !/apt-key|trusted=yes|allow-unauthenticated/i.test(aptBootstrap),
+  "the APT bootstrap contains an insecure trust bypass",
+);
+invariant(
+  aptSources.includes("Signed-By: /etc/apt/keyrings/aseprite-installer-archive-keyring.asc") &&
+    aptSources.includes("URIs: https://fmhun.github.io/aseprite-installer/apt/"),
+  "the public APT source definition is incorrect",
+);
+invariant(
+  aptPublicKey.includes("BEGIN PGP PUBLIC KEY BLOCK") &&
+    aptFingerprint.trim() === "63C431554A41582749BBAD5EF2AB2099C8DF4DD3",
+  "the stable APT archive identity is missing",
+);
 
 const title = decodeHtmlMetadata(html.match(/<title>([^<]+)<\/title>/)?.[1] ?? "");
 const description = html.match(/<meta\s+name="description"\s+content="([^"]+)"/s)?.[1] ?? "";
@@ -161,9 +208,12 @@ invariant(software.offers?.price === 0, "the installer offer must use a zero pri
 invariant(software.offers?.priceCurrency === "USD", "the installer offer currency is missing");
 invariant(software.offers?.url === releaseUrl, "the installer offer must point to the versioned release");
 invariant(!software.aggregateRating && !software.review, "ratings or reviews must never be fabricated");
+const visibleHtml = html
+  .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "")
+  .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
 for (const question of faq.mainEntity ?? []) {
-  invariant(html.includes(question.name), `the FAQ question is not visible: ${question.name}`);
-  invariant(html.includes(question.acceptedAnswer?.text), `the FAQ answer is not visible: ${question.name}`);
+  invariant(visibleHtml.includes(question.name), `the FAQ question is not visible: ${question.name}`);
+  invariant(visibleHtml.includes(question.acceptedAnswer?.text), `the FAQ answer is not visible: ${question.name}`);
 }
 
 const renderedLatestAssetUrls = [...new Set(

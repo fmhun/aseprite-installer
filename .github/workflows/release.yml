@@ -451,10 +451,10 @@ jobs:
 
             Packages:
             - macOS 15.2+: arm64 and x64 app archives and DMGs (ad-hoc signed, not notarized)
-            - Linux x86_64: AppImage, deb, and rpm (unsigned)
+            - Linux x86_64: AppImage, deb, and rpm (direct assets unsigned; signed APT repository metadata is published separately on GitHub Pages)
             - Windows 11 x64: current-user NSIS and administratively deployed MSI (unsigned; SmartScreen may warn)
 
-            Verify downloads with `SHA256SUMS` and GitHub's build-provenance attestations. Aseprite Installer has no built-in updater; install a newer package to update the installer itself.
+            Verify direct downloads with `SHA256SUMS` and GitHub's build-provenance attestations. Aseprite Installer has no built-in updater; signed APT repository installations update through APT, while direct packages must be replaced with a newer release.
         run: |
           set -euo pipefail
           expected=(

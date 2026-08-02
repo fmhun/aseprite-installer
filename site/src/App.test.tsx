@@ -11,6 +11,8 @@ import {
 const RELEASES_LATEST_URL =
   "https://github.com/fmhun/aseprite-installer/releases/latest";
 const ASSET_URL = `${RELEASES_LATEST_URL}/download`;
+const APT_INSTALL_SCRIPT_URL =
+  "https://fmhun.github.io/aseprite-installer/install-apt.sh";
 const LINUX_DOWNLOAD_DIRECTORY_COMMAND =
   'ASEPRITE_DOWNLOAD_DIR="$(xdg-user-dir DOWNLOAD 2>/dev/null)"; ASEPRITE_DOWNLOAD_DIR="${ASEPRITE_DOWNLOAD_DIR:-$HOME/Downloads}"';
 const originalClipboardDescriptor = Object.getOwnPropertyDescriptor(
@@ -63,10 +65,8 @@ const appImageCommand = expectedLinuxCommand(
   "Aseprite-Installer-Linux-x86_64.AppImage",
   'chmod u+x "Aseprite-Installer-Linux-x86_64.AppImage" && "./Aseprite-Installer-Linux-x86_64.AppImage"',
 );
-const debCommand = expectedLinuxCommand(
-  "Aseprite-Installer-Linux-x86_64.deb",
-  'sudo apt install "./Aseprite-Installer-Linux-x86_64.deb"',
-);
+const debCommand =
+  `curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 ${APT_INSTALL_SCRIPT_URL} | sh`;
 const rpmCommand = expectedLinuxCommand(
   "Aseprite-Installer-Linux-x86_64.rpm",
   'sudo dnf install "./Aseprite-Installer-Linux-x86_64.rpm"',
@@ -237,11 +237,11 @@ describe("landing page", () => {
       "href",
       `${ASSET_URL}/Aseprite-Installer-Linux-x86_64.AppImage`,
     );
-    expect(screen.getByText("deb package").closest("a")).toHaveAttribute(
+    expect(screen.getByText("Direct .deb").closest("a")).toHaveAttribute(
       "href",
       `${ASSET_URL}/Aseprite-Installer-Linux-x86_64.deb`,
     );
-    expect(screen.getByText("rpm package").closest("a")).toHaveAttribute(
+    expect(screen.getByText("Direct .rpm").closest("a")).toHaveAttribute(
       "href",
       `${ASSET_URL}/Aseprite-Installer-Linux-x86_64.rpm`,
     );
@@ -257,14 +257,14 @@ describe("landing page", () => {
     expect(
       document.querySelector("#platform-linux-panel .site-platform-warning"),
     ).toHaveTextContent(
-      "The quick-install command verifies SHA256SUMS and makes AppImage executable",
+      "APT verifies signed repository metadata and package hashes automatically",
     );
     expect(screen.getByText(/open the DMG/)).toBeInTheDocument();
     expect(screen.getByText(/run the current-user installer/)).toBeInTheDocument();
     expect(
       document.querySelector("#platform-linux-panel .site-platform-install"),
     ).toHaveTextContent(
-      "copy its command, and paste it into Terminal. Download and verification happen before installation.",
+      "The Debian/Ubuntu bootstrap configures APT once; future updates arrive with normal system updates.",
     );
     expect(document.body).not.toHaveTextContent(/planned|universal dmg/i);
     expect(document.querySelector(".site-package-board")).not.toBeInTheDocument();
@@ -334,7 +334,7 @@ describe("landing page", () => {
       expect(renderedLinuxCommand()).toBe(appImageCommand);
     });
 
-    it("switches Debian, Fedora, and openSUSE recipes and follows package links", async () => {
+    it("switches Debian, Fedora, and openSUSE recipes and keeps direct packages distinct", async () => {
       await renderLinuxLanding();
       const viewer = linuxViewer();
       const debRecipe = viewer.getByRole("button", { name: "Debian / Ubuntu" });
@@ -344,6 +344,27 @@ describe("landing page", () => {
       fireEvent.click(debRecipe);
       expect(debRecipe).toHaveAttribute("aria-pressed", "true");
       expect(renderedLinuxCommand()).toBe(debCommand);
+      expect(viewer.getByRole("link", { name: /Inspect the bootstrap/i })).toHaveAttribute(
+        "href",
+        "https://github.com/fmhun/aseprite-installer/blob/main/site/public/install-apt.sh",
+      );
+      expect(viewer.getByText(/future updates/i)).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "bootstrap script" })).toHaveAttribute(
+        "href",
+        APT_INSTALL_SCRIPT_URL,
+      );
+      expect(screen.getByRole("link", { name: "public key" })).toHaveAttribute(
+        "href",
+        "https://fmhun.github.io/aseprite-installer/apt/aseprite-installer-archive-keyring.asc",
+      );
+      expect(screen.getByRole("link", { name: "source definition" })).toHaveAttribute(
+        "href",
+        "https://fmhun.github.io/aseprite-installer/apt/aseprite-installer.sources",
+      );
+      expect(screen.getByRole("link", { name: "origin policy" })).toHaveAttribute(
+        "href",
+        "https://fmhun.github.io/aseprite-installer/apt/aseprite-installer.pref",
+      );
 
       fireEvent.click(rpmRecipe);
       expect(rpmRecipe).toHaveAttribute("aria-pressed", "true");
@@ -353,25 +374,25 @@ describe("landing page", () => {
       expect(zypperRecipe).toHaveAttribute("aria-pressed", "true");
       expect(renderedLinuxCommand()).toBe(zypperCommand);
 
-      const debPackageLink = screen.getByText("deb package").closest("a");
-      expect(debPackageLink).not.toBeNull();
-      debPackageLink!.addEventListener("click", (event) => event.preventDefault(), {
+      fireEvent.click(zypperRecipe);
+      const aptSetupLink = screen.getByText("Signed APT setup").closest("a");
+      expect(aptSetupLink).toHaveAttribute("href", "#linux-quick-install-title");
+      aptSetupLink!.addEventListener("click", (event) => event.preventDefault(), {
         once: true,
       });
-      fireEvent.click(debPackageLink!);
+      fireEvent.click(aptSetupLink!);
       expect(debRecipe).toHaveAttribute("aria-pressed", "true");
       expect(renderedLinuxCommand()).toBe(debCommand);
 
       fireEvent.click(zypperRecipe);
-      const rpmPackageLink = screen.getByText("rpm package").closest("a");
-      expect(rpmPackageLink).not.toBeNull();
-      rpmPackageLink!.addEventListener("click", (event) => event.preventDefault(), {
+      const directDebLink = screen.getByText("Direct .deb").closest("a");
+      expect(directDebLink).toHaveAttribute("href", `${ASSET_URL}/Aseprite-Installer-Linux-x86_64.deb`);
+      directDebLink!.addEventListener("click", (event) => event.preventDefault(), {
         once: true,
       });
-      fireEvent.click(rpmPackageLink!);
-      expect(rpmRecipe).toHaveAttribute("aria-pressed", "true");
-      expect(zypperRecipe).toHaveAttribute("aria-pressed", "false");
-      expect(renderedLinuxCommand()).toBe(rpmCommand);
+      fireEvent.click(directDebLink!);
+      expect(zypperRecipe).toHaveAttribute("aria-pressed", "true");
+      expect(renderedLinuxCommand()).toBe(zypperCommand);
     });
 
     it("copies the exact selected command with the Clipboard API", async () => {

@@ -1,0 +1,3 @@
+Package: aseprite-installer
+Pin: origin "fmhun.github.io"
+Pin-Priority: 1001

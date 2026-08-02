@@ -1449,6 +1449,24 @@ summary:focus-visible {
 
 .site-command-assumption { color: var(--faint); }
 
+.site-command-assumption a {
+  color: var(--accent-text);
+  font-weight: 700;
+}
+
+.site-command-assumption a:hover { color: var(--accent-hot); }
+
+.site-apt-resources {
+  margin: 14px 2px 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.site-apt-resources strong { color: var(--text); }
+.site-apt-resources a { color: var(--accent-text); }
+.site-apt-resources a:hover { color: var(--accent-hot); }
+
 .site-command-assumption code {
   color: var(--accent-text);
   font-family: Monaco, "Courier New", monospace;

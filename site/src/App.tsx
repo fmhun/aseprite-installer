@@ -30,6 +30,10 @@ import { useDemoPlayback } from "./useDemoPlayback";
 const GITHUB_URL = "https://github.com/fmhun/aseprite-installer";
 const DOWNLOAD_URL = `${GITHUB_URL}/releases/latest`;
 const DOWNLOAD_ASSET_URL = `${DOWNLOAD_URL}/download`;
+const APT_INSTALL_SCRIPT_URL =
+  "https://fmhun.github.io/aseprite-installer/install-apt.sh";
+const APT_REPOSITORY_URL =
+  "https://fmhun.github.io/aseprite-installer/apt/";
 const BUY_URL = "https://www.aseprite.org/buy/";
 const EULA_URL = "https://github.com/aseprite/aseprite/blob/main/EULA.txt";
 
@@ -96,6 +100,8 @@ const linuxInstallRecipes: Record<
     detail: string;
     label: string;
     note: string;
+    requirement: string;
+    sourceUrl?: string;
   }
 > = {
   appimage: {
@@ -106,15 +112,15 @@ const linuxInstallRecipes: Record<
       'chmod u+x "Aseprite-Installer-Linux-x86_64.AppImage" && "./Aseprite-Installer-Linux-x86_64.AppImage"',
     ),
     note: "Downloads and verifies the AppImage, makes it executable, then launches it. Nothing is installed system-wide.",
+    requirement: "Requires curl or wget and sha256sum. Saves to your Downloads folder, with ~/Downloads as fallback.",
   },
   deb: {
     label: "Debian / Ubuntu",
-    detail: "Debian or Ubuntu · uses apt",
-    command: verifiedLinuxCommand(
-      "Aseprite-Installer-Linux-x86_64.deb",
-      'sudo apt install "./Aseprite-Installer-Linux-x86_64.deb"',
-    ),
-    note: "Downloads and verifies the package, then apt installs it and resolves its dependencies. Your system may ask for your password.",
+    detail: "Signed APT repository · automatic updates",
+    command: `curl -fsSL --proto '=https' --proto-redir '=https' --tlsv1.2 ${APT_INSTALL_SCRIPT_URL} | sh`,
+    note: "Adds the project’s signed APT repository, installs Aseprite Installer, and lets APT deliver future updates. It never launches the app.",
+    requirement: "Requires curl, apt, and sudo access. The public bootstrap can be inspected before running it.",
+    sourceUrl: `${GITHUB_URL}/blob/main/site/public/install-apt.sh`,
   },
   rpm: {
     label: "Fedora / RHEL",
@@ -124,6 +130,7 @@ const linuxInstallRecipes: Record<
       'sudo dnf install "./Aseprite-Installer-Linux-x86_64.rpm"',
     ),
     note: "Downloads and verifies the package, then dnf installs it and resolves its dependencies. Your system may ask for your password.",
+    requirement: "Requires curl or wget and sha256sum. Saves to your Downloads folder, with ~/Downloads as fallback.",
   },
   zypper: {
     label: "openSUSE",
@@ -133,6 +140,7 @@ const linuxInstallRecipes: Record<
       'sudo zypper install "./Aseprite-Installer-Linux-x86_64.rpm"',
     ),
     note: "Downloads and verifies the package, then zypper installs it and resolves its dependencies. Your system may ask for your password.",
+    requirement: "Requires curl or wget and sha256sum. Saves to your Downloads folder, with ~/Downloads as fallback.",
   },
 };
 
@@ -522,7 +530,7 @@ function LinuxQuickInstall({
           <span className="site-terminal-kicker">QUICK INSTALL</span>
           <h4 id="linux-quick-install-title">One command. Verified install.</h4>
         </div>
-        <p>Pick your system, copy once, then paste into Terminal. Download and SHA-256 verification are automatic.</p>
+        <p>Pick your system, copy once, then paste into Terminal. Repository trust or SHA-256 verification is automatic.</p>
       </div>
 
       <div className="site-recipe-switcher" role="group" aria-label="Linux install recipe">
@@ -562,8 +570,10 @@ function LinuxQuickInstall({
           </div>
           <p className="site-command-note">{recipe.note}</p>
           <p className="site-command-assumption">
-            Saves to your Linux Downloads folder automatically, with <code>~/Downloads</code> as fallback.
-            Requires either <code>curl</code> or <code>wget</code> and <code>sha256sum</code>.
+            {recipe.requirement}
+            {recipe.sourceUrl ? (
+              <> <a href={recipe.sourceUrl}>Inspect the bootstrap <ExternalArrow /></a></>
+            ) : null}
           </p>
           <span className="site-sr-only" role="status" aria-live="polite">
             {copyState === "copied"
@@ -583,12 +593,14 @@ function PackageLink({
   label,
   detail,
   tone = "secondary",
+  indicator = "↓",
   onActivate,
 }: {
   href: string;
   label: string;
   detail: string;
   tone?: "primary" | "secondary";
+  indicator?: "↓" | "→";
   onActivate?: () => void;
 }) {
   return (
@@ -598,7 +610,7 @@ function PackageLink({
       onClick={onActivate}
     >
       <span><strong>{label}</strong><small>{detail}</small></span>
-      <span aria-hidden="true">↓</span>
+      <span aria-hidden="true">{indicator}</span>
     </a>
   );
 }
@@ -739,19 +751,27 @@ function DownloadPicker({
       >
         <div className="site-platform-meta">
           <div><h3>Linux</h3><p>x86_64 · Ubuntu 22.04 / Debian 12 baseline</p></div>
-          <span>UNSIGNED</span>
+          <span>SIGNED APT AVAILABLE</span>
         </div>
-        <p>AppImage is the least invasive choice. Use deb or rpm for native package-manager integration.</p>
+        <p>Debian and Ubuntu users get a signed APT repository with native updates. AppImage stays portable; rpm remains available for compatible systems.</p>
         <div className="site-platform-packages">
-          <PackageLink href={downloads.linuxAppImage} label="AppImage" detail="Recommended · portable x86_64" tone="primary" onActivate={() => setActiveLinuxRecipe("appimage")} />
-          <PackageLink href={downloads.linuxDeb} label="deb package" detail="Debian and Ubuntu · x86_64" onActivate={() => setActiveLinuxRecipe("deb")} />
-          <PackageLink href={downloads.linuxRpm} label="rpm package" detail="Fedora and compatible systems · x86_64" onActivate={() => setActiveLinuxRecipe("rpm")} />
+          <PackageLink href="#linux-quick-install-title" label="Signed APT setup" detail="Recommended for Debian and Ubuntu · native updates" tone="primary" indicator="→" onActivate={() => setActiveLinuxRecipe("deb")} />
+          <PackageLink href={downloads.linuxAppImage} label="AppImage" detail="Portable x86_64 download" />
+          <PackageLink href={downloads.linuxDeb} label="Direct .deb" detail="Manual fallback · unsigned release asset" />
+          <PackageLink href={downloads.linuxRpm} label="Direct .rpm" detail="Fedora and compatible systems · unsigned" />
         </div>
         <LinuxQuickInstall
           activeRecipe={activeLinuxRecipe}
           onRecipeChange={setActiveLinuxRecipe}
         />
-        <p className="site-platform-install"><strong>Install:</strong> choose the recipe above, copy its command, and paste it into Terminal. Download and verification happen before installation.</p>
+        <p className="site-apt-resources">
+          <strong>Signed APT resources:</strong>{" "}
+          <a href={APT_INSTALL_SCRIPT_URL}>bootstrap script</a>{" · "}
+          <a href={`${APT_REPOSITORY_URL}aseprite-installer-archive-keyring.asc`}>public key</a>{" · "}
+          <a href={`${APT_REPOSITORY_URL}aseprite-installer.sources`}>source definition</a>{" · "}
+          <a href={`${APT_REPOSITORY_URL}aseprite-installer.pref`}>origin policy</a>
+        </p>
+        <p className="site-platform-install"><strong>Install:</strong> choose the recipe above, copy its command, and paste it into Terminal. The Debian/Ubuntu bootstrap configures APT once; future updates arrive with normal system updates.</p>
         <div className="site-platform-requirements">
           <strong>Before you build</strong>
           <ul>
@@ -760,8 +780,8 @@ function DownloadPicker({
             <li>WebKitGTK 4.1 runtime dependencies and about 6 GB free</li>
           </ul>
         </div>
-        <p className="site-platform-guidance">Aseprite Installer provides the right apt, dnf, pacman, or zypper command for recognized distributions. It never runs <code>sudo</code> or <code>pkexec</code>.</p>
-        <p className="site-platform-warning"><strong>First launch:</strong> packages are unsigned. The quick-install command verifies <code>SHA256SUMS</code> and makes AppImage executable before opening it. If you install manually, verify the checksum and provenance yourself.</p>
+        <p className="site-platform-guidance">The desktop app provides the right apt, dnf, pacman, or zypper command for recognized distributions. It never runs <code>sudo</code> or <code>pkexec</code>; the installation bootstrap requests sudo only for the APT transaction and repository files.</p>
+        <p className="site-platform-warning"><strong>Trust:</strong> APT verifies signed repository metadata and package hashes automatically. Direct AppImage, deb, and rpm release assets remain unsigned; the other quick-install recipes verify <code>SHA256SUMS</code> before use.</p>
       </section>
 
       <div className="site-download-footer">
@@ -1015,7 +1035,7 @@ function App() {
           <div className="site-faq-list">
             <details>
               <summary>Which installer should I choose?<span aria-hidden="true">+</span></summary>
-              <p>On macOS, choose the DMG for your Mac’s architecture. On Windows, use the NSIS .exe for a personal installation or MSI for managed deployment. On Linux, AppImage is the least invasive choice; deb and rpm integrate with their matching package managers.</p>
+              <p>On macOS, choose the DMG for your Mac’s architecture. On Windows, use the NSIS .exe for a personal installation or MSI for managed deployment. On Debian or Ubuntu, use the signed APT repository for native updates; choose AppImage for a portable Linux copy or rpm on compatible systems.</p>
             </details>
             <details>
               <summary>Does the installer distribute Aseprite?<span aria-hidden="true">+</span></summary>
