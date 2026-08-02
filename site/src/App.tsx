@@ -1,7 +1,17 @@
-import { useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import installerIcon from "../../assets/icons/aseprite-installer.svg";
 import localBuildIcon from "../../assets/icons/aseprite-local.svg";
 import type { DemoPhase } from "./demo";
+import {
+  detectPlatform,
+  detectPlatformSync,
+  getCompatibleDownloadTarget,
+  supportedPlatforms,
+  type DownloadTarget,
+  type NavigatorLike,
+  type PlatformDetection,
+  type SupportedPlatform,
+} from "./platformDetection";
 import { useDemoPlayback } from "./useDemoPlayback";
 
 const GITHUB_URL = "https://github.com/fmhun/aseprite-installer";
@@ -22,6 +32,96 @@ const downloads = {
   linuxRpm: `${DOWNLOAD_ASSET_URL}/Aseprite-Installer-Linux-x86_64.rpm`,
   checksums: `${DOWNLOAD_ASSET_URL}/SHA256SUMS`,
 } as const;
+
+const directDownloadCtas: Record<
+  DownloadTarget,
+  { href: string; label: string; platform: SupportedPlatform; status: string }
+> = {
+  "macos-arm64": {
+    href: downloads.macosArmDmg,
+    label: "Download for Apple Silicon",
+    platform: "macos",
+    status: "Apple Silicon detected · Apple Silicon DMG recommended",
+  },
+  "macos-x64": {
+    href: downloads.macosIntelDmg,
+    label: "Download for Intel Mac",
+    platform: "macos",
+    status: "Intel Mac detected · Intel DMG recommended",
+  },
+  "windows-x64": {
+    href: downloads.windowsNsis,
+    label: "Download for Windows",
+    platform: "windows",
+    status: "Windows x64 detected · NSIS installer recommended",
+  },
+  "linux-x64": {
+    href: downloads.linuxAppImage,
+    label: "Download AppImage",
+    platform: "linux",
+    status: "Linux x86_64 detected · AppImage recommended",
+  },
+};
+
+type LinuxRecipeId = "appimage" | "deb" | "rpm" | "zypper";
+
+const linuxDownloadDirectoryCommand =
+  'ASEPRITE_DOWNLOAD_DIR="$(xdg-user-dir DOWNLOAD 2>/dev/null)"; ASEPRITE_DOWNLOAD_DIR="${ASEPRITE_DOWNLOAD_DIR:-$HOME/Downloads}"';
+
+function verifiedLinuxCommand(asset: string, installCommand: string): string {
+  const assetUrl = `${DOWNLOAD_ASSET_URL}/${asset}`;
+  const curlDownloads = `curl -fL --retry 3 -o "${asset}" "${assetUrl}" && curl -fL --retry 3 -o SHA256SUMS "${downloads.checksums}"`;
+  const wgetDownloads = `wget -O "${asset}" "${assetUrl}" && wget -O SHA256SUMS "${downloads.checksums}"`;
+
+  return `${linuxDownloadDirectoryCommand}; mkdir -p "$ASEPRITE_DOWNLOAD_DIR" && cd "$ASEPRITE_DOWNLOAD_DIR" && ( (${curlDownloads}) || (${wgetDownloads}) ) && grep -F "  ${asset}" SHA256SUMS > "${asset}.sha256" && sha256sum --check "${asset}.sha256" && rm -f "${asset}.sha256" && ${installCommand}`;
+}
+
+const linuxInstallRecipes: Record<
+  LinuxRecipeId,
+  {
+    command: string;
+    detail: string;
+    label: string;
+    note: string;
+  }
+> = {
+  appimage: {
+    label: "AppImage",
+    detail: "Portable · no administrator access",
+    command: verifiedLinuxCommand(
+      "Aseprite-Installer-Linux-x86_64.AppImage",
+      'chmod u+x "Aseprite-Installer-Linux-x86_64.AppImage" && "./Aseprite-Installer-Linux-x86_64.AppImage"',
+    ),
+    note: "Downloads and verifies the AppImage, makes it executable, then launches it. Nothing is installed system-wide.",
+  },
+  deb: {
+    label: "Debian / Ubuntu",
+    detail: "Debian or Ubuntu · uses apt",
+    command: verifiedLinuxCommand(
+      "Aseprite-Installer-Linux-x86_64.deb",
+      'sudo apt install "./Aseprite-Installer-Linux-x86_64.deb"',
+    ),
+    note: "Downloads and verifies the package, then apt installs it and resolves its dependencies. Your system may ask for your password.",
+  },
+  rpm: {
+    label: "Fedora / RHEL",
+    detail: "Fedora or compatible · uses dnf",
+    command: verifiedLinuxCommand(
+      "Aseprite-Installer-Linux-x86_64.rpm",
+      'sudo dnf install "./Aseprite-Installer-Linux-x86_64.rpm"',
+    ),
+    note: "Downloads and verifies the package, then dnf installs it and resolves its dependencies. Your system may ask for your password.",
+  },
+  zypper: {
+    label: "openSUSE",
+    detail: "openSUSE · uses zypper",
+    command: verifiedLinuxCommand(
+      "Aseprite-Installer-Linux-x86_64.rpm",
+      'sudo zypper install "./Aseprite-Installer-Linux-x86_64.rpm"',
+    ),
+    note: "Downloads and verifies the package, then zypper installs it and resolves its dependencies. Your system may ask for your password.",
+  },
+};
 
 function ExternalArrow() {
   return <span aria-hidden="true">↗</span>;
@@ -213,8 +313,8 @@ export function ProductDemo() {
   );
 }
 
-const platformIds = ["macos", "windows", "linux"] as const;
-type PlatformId = (typeof platformIds)[number];
+const platformIds = supportedPlatforms;
+type PlatformId = SupportedPlatform;
 
 const platformLabels: Record<PlatformId, string> = {
   macos: "macOS",
@@ -222,32 +322,284 @@ const platformLabels: Record<PlatformId, string> = {
   linux: "Linux",
 };
 
+interface SmartDownloadCta {
+  href: string;
+  label: string;
+  target: DownloadTarget | null;
+}
+
+function getSmartDownloadCta(
+  detection: PlatformDetection | null,
+  manualPlatform: PlatformId | null,
+): SmartDownloadCta {
+  const detectedTarget = detection ? getCompatibleDownloadTarget(detection) : null;
+  const directCta = detectedTarget ? directDownloadCtas[detectedTarget] : null;
+
+  if (manualPlatform) {
+    if (directCta?.platform === manualPlatform) {
+      return { href: directCta.href, label: directCta.label, target: detectedTarget };
+    }
+    return {
+      href: "#install",
+      label:
+        manualPlatform === "macos"
+          ? "Choose Apple Silicon or Intel"
+          : `Choose a ${platformLabels[manualPlatform]} package`,
+      target: null,
+    };
+  }
+
+  if (directCta && detectedTarget) {
+    return { href: directCta.href, label: directCta.label, target: detectedTarget };
+  }
+
+  if (detection?.platform === "macos" && !detection.hasConflict) {
+    return { href: "#install", label: "Choose Apple Silicon or Intel", target: null };
+  }
+  if (detection?.platform === "windows" && !detection.hasConflict) {
+    return { href: "#install", label: "Review Windows downloads", target: null };
+  }
+  if (detection?.platform === "linux" && !detection.hasConflict) {
+    return { href: "#install", label: "Choose a compatible Linux package", target: null };
+  }
+  return { href: "#install", label: "Choose your platform", target: null };
+}
+
+function getDetectionStatus(
+  detection: PlatformDetection | null,
+  manualPlatform: PlatformId | null,
+): string {
+  if (manualPlatform) {
+    return `${platformLabels[manualPlatform]} selected manually · automatic selection paused`;
+  }
+  if (!detection) {
+    return "Automatic detection runs locally · manual choice always wins";
+  }
+  if (detection.hasConflict) {
+    return "System signals disagree · choose your platform manually";
+  }
+  if (detection.deviceKind === "mobile") {
+    return "Mobile device detected · choose the target desktop computer";
+  }
+  if (detection.exclusionReason === "chromeos") {
+    return "ChromeOS detected · choose a package for another supported computer";
+  }
+  if (detection.deviceKind === "unsupported") {
+    return "Unsupported system detected · choose the target computer manually";
+  }
+
+  const target = getCompatibleDownloadTarget(detection);
+  if (target) return directDownloadCtas[target].status;
+
+  if (detection.platform === "macos") {
+    if (detection.osCompatibility === "incompatible") {
+      return `${detection.platformVersion ? `macOS ${detection.platformVersion}` : "This macOS version"} detected · macOS 15.2+ is required`;
+    }
+    if (detection.architecture !== "unknown" && detection.osCompatibility === "unknown") {
+      return "Mac architecture detected · confirm macOS 15.2+ before downloading";
+    }
+    return "macOS detected · choose Apple Silicon or Intel";
+  }
+  if (detection.platform === "windows") {
+    if (detection.osCompatibility === "incompatible") {
+      return "Windows 10 detected · Windows 11 is required";
+    }
+    return detection.architecture === "arm64"
+      ? "Windows ARM64 detected · current packages require x64"
+      : detection.architecture === "x64" && detection.osCompatibility === "unknown"
+        ? "Windows x64 detected · confirm Windows 11 before downloading"
+        : "Windows detected · confirm a Windows 11 x64 system";
+  }
+  if (detection.platform === "linux") {
+    return detection.architecture === "arm64"
+      ? "Linux ARM64 detected · current packages require x86_64"
+      : "Linux detected · choose a compatible x86_64 package";
+  }
+  return "System not recognized · choose your platform manually";
+}
+
+async function copyTextToClipboard(value: string): Promise<void> {
+  if (typeof navigator.clipboard?.writeText === "function") {
+    try {
+      await navigator.clipboard.writeText(value);
+      return;
+    } catch {
+      // Fall through to the selection-based copy path for restrictive browsers.
+    }
+  }
+
+  const previousFocus =
+    document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.readOnly = true;
+  textarea.tabIndex = -1;
+  textarea.style.position = "fixed";
+  textarea.style.inset = "0 auto auto -9999px";
+  let copied = false;
+  try {
+    document.body.append(textarea);
+    textarea.select();
+    copied =
+      typeof document.execCommand === "function" && document.execCommand("copy");
+  } finally {
+    textarea.remove();
+    previousFocus?.focus();
+  }
+
+  if (!copied) throw new Error("Clipboard access is unavailable");
+}
+
+function LinuxQuickInstall({
+  activeRecipe,
+  onRecipeChange,
+}: {
+  activeRecipe: LinuxRecipeId;
+  onRecipeChange: (recipe: LinuxRecipeId) => void;
+}) {
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const copyOperationRef = useRef(0);
+  const resetTimerRef = useRef<number | null>(null);
+  const recipe = linuxInstallRecipes[activeRecipe];
+
+  useEffect(() => () => {
+    copyOperationRef.current += 1;
+    if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
+  }, []);
+
+  const chooseRecipe = (nextRecipe: LinuxRecipeId) => {
+    copyOperationRef.current += 1;
+    if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = null;
+    setCopyState("idle");
+    onRecipeChange(nextRecipe);
+  };
+
+  const copyCommand = async () => {
+    const operation = copyOperationRef.current + 1;
+    copyOperationRef.current = operation;
+    try {
+      await copyTextToClipboard(recipe.command);
+      if (copyOperationRef.current !== operation) return;
+      setCopyState("copied");
+    } catch {
+      if (copyOperationRef.current !== operation) return;
+      setCopyState("failed");
+    }
+
+    if (resetTimerRef.current !== null) window.clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = window.setTimeout(() => {
+      resetTimerRef.current = null;
+      setCopyState("idle");
+    }, 2_000);
+  };
+
+  const copyLabel =
+    copyState === "copied" ? "Copied!" : copyState === "failed" ? "Copy failed" : "Copy";
+
+  return (
+    <section className="site-quick-install" aria-labelledby="linux-quick-install-title">
+      <div className="site-quick-install-heading">
+        <div>
+          <span className="site-terminal-kicker">QUICK INSTALL</span>
+          <h4 id="linux-quick-install-title">One command. Verified install.</h4>
+        </div>
+        <p>Pick your system, copy once, then paste into Terminal. Download and SHA-256 verification are automatic.</p>
+      </div>
+
+      <div className="site-recipe-switcher" role="group" aria-label="Linux install recipe">
+        {(Object.keys(linuxInstallRecipes) as LinuxRecipeId[]).map((recipeId) => (
+          <button
+            aria-pressed={activeRecipe === recipeId}
+            key={recipeId}
+            onClick={() => chooseRecipe(recipeId)}
+            type="button"
+          >
+            {linuxInstallRecipes[recipeId].label}
+          </button>
+        ))}
+      </div>
+
+      <div className="site-terminal-window">
+        <div className="site-terminal-titlebar">
+          <span aria-hidden="true"><i /><i /><i /></span>
+          <strong>TERMINAL · {recipe.label.toUpperCase()}</strong>
+          <small>{recipe.detail}</small>
+        </div>
+        <div className="site-terminal-content">
+          <div className="site-command-step">
+            <span className="site-command-step-label"><b>01</b> Copy, paste, and run</span>
+            <div className="site-command-line">
+              <span className="site-command-prompt" aria-hidden="true">$</span>
+              <pre tabIndex={0}><code>{recipe.command}</code></pre>
+              <button
+                aria-label={`Copy ${recipe.label} install command`}
+                className={`site-copy-command${copyState === "copied" ? " is-copied" : ""}`}
+                onClick={() => { void copyCommand(); }}
+                type="button"
+              >
+                <span aria-hidden="true">▣</span> {copyLabel}
+              </button>
+            </div>
+          </div>
+          <p className="site-command-note">{recipe.note}</p>
+          <p className="site-command-assumption">
+            Saves to your Linux Downloads folder automatically, with <code>~/Downloads</code> as fallback.
+            Requires either <code>curl</code> or <code>wget</code> and <code>sha256sum</code>.
+          </p>
+          <span className="site-sr-only" role="status" aria-live="polite">
+            {copyState === "copied"
+              ? `${recipe.label} install command copied to clipboard.`
+              : copyState === "failed"
+                ? "Automatic copy failed. Select the command and copy it manually."
+                : ""}
+          </span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function PackageLink({
   href,
   label,
   detail,
   tone = "secondary",
+  onActivate,
 }: {
   href: string;
   label: string;
   detail: string;
   tone?: "primary" | "secondary";
+  onActivate?: () => void;
 }) {
   return (
-    <a className={`site-package-link site-package-link--${tone}`} href={href}>
+    <a
+      className={`site-package-link site-package-link--${tone}`}
+      href={href}
+      onClick={onActivate}
+    >
       <span><strong>{label}</strong><small>{detail}</small></span>
       <span aria-hidden="true">↓</span>
     </a>
   );
 }
 
-function DownloadPicker() {
-  const [activePlatform, setActivePlatform] = useState<PlatformId>("macos");
+function DownloadPicker({
+  activePlatform,
+  detectionStatus,
+  onPlatformChange,
+}: {
+  activePlatform: PlatformId | null;
+  detectionStatus: string;
+  onPlatformChange: (platform: PlatformId) => void;
+}) {
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  const [activeLinuxRecipe, setActiveLinuxRecipe] = useState<LinuxRecipeId>("appimage");
 
   const activateTab = (index: number) => {
     const platform = platformIds[index];
-    setActivePlatform(platform);
+    onPlatformChange(platform);
     tabRefs.current[index]?.focus();
   };
 
@@ -266,7 +618,10 @@ function DownloadPicker() {
   };
 
   return (
-    <div className="site-download-picker">
+    <div className="site-download-picker" data-active-platform={activePlatform ?? "none"}>
+      <p className="site-detection-note" role="status">
+        <span aria-hidden="true">◆</span> {detectionStatus}
+      </p>
       <div className="site-platform-tabs" role="tablist" aria-label="Choose your operating system">
         {platformIds.map((platform, index) => (
           <button
@@ -277,9 +632,9 @@ function DownloadPicker() {
             role="tab"
             aria-controls={`platform-${platform}-panel`}
             aria-selected={activePlatform === platform}
-            tabIndex={activePlatform === platform ? 0 : -1}
+            tabIndex={activePlatform === platform || (!activePlatform && index === 0) ? 0 : -1}
             ref={(node) => { tabRefs.current[index] = node; }}
-            onClick={() => setActivePlatform(platform)}
+            onClick={() => onPlatformChange(platform)}
             onKeyDown={(event) => handleTabKeyDown(event, index)}
           >
             {platformLabels[platform]}
@@ -287,12 +642,20 @@ function DownloadPicker() {
         ))}
       </div>
 
+      {!activePlatform && (
+        <div className="site-platform-prompt">
+          <strong>Choose the desktop you want to install on.</strong>
+          <p>Pick macOS, Windows, or Linux above to see its verified packages and requirements.</p>
+        </div>
+      )}
+
       <section
         className="site-platform-panel"
         id="platform-macos-panel"
         role="tabpanel"
         aria-labelledby="platform-macos-tab"
         hidden={activePlatform !== "macos"}
+        tabIndex={activePlatform === "macos" ? 0 : -1}
       >
         <div className="site-platform-meta">
           <div><h3>macOS</h3><p>macOS 15.2+ · Apple Silicon or Intel</p></div>
@@ -324,6 +687,7 @@ function DownloadPicker() {
         role="tabpanel"
         aria-labelledby="platform-windows-tab"
         hidden={activePlatform !== "windows"}
+        tabIndex={activePlatform === "windows" ? 0 : -1}
       >
         <div className="site-platform-meta">
           <div><h3>Windows</h3><p>Windows 11 · x64</p></div>
@@ -353,6 +717,7 @@ function DownloadPicker() {
         role="tabpanel"
         aria-labelledby="platform-linux-tab"
         hidden={activePlatform !== "linux"}
+        tabIndex={activePlatform === "linux" ? 0 : -1}
       >
         <div className="site-platform-meta">
           <div><h3>Linux</h3><p>x86_64 · Ubuntu 22.04 / Debian 12 baseline</p></div>
@@ -360,11 +725,15 @@ function DownloadPicker() {
         </div>
         <p>AppImage is the least invasive choice. Use deb or rpm for native package-manager integration.</p>
         <div className="site-platform-packages">
-          <PackageLink href={downloads.linuxAppImage} label="AppImage" detail="Recommended · portable x86_64" tone="primary" />
-          <PackageLink href={downloads.linuxDeb} label="deb package" detail="Debian and Ubuntu · x86_64" />
-          <PackageLink href={downloads.linuxRpm} label="rpm package" detail="Fedora and compatible systems · x86_64" />
+          <PackageLink href={downloads.linuxAppImage} label="AppImage" detail="Recommended · portable x86_64" tone="primary" onActivate={() => setActiveLinuxRecipe("appimage")} />
+          <PackageLink href={downloads.linuxDeb} label="deb package" detail="Debian and Ubuntu · x86_64" onActivate={() => setActiveLinuxRecipe("deb")} />
+          <PackageLink href={downloads.linuxRpm} label="rpm package" detail="Fedora and compatible systems · x86_64" onActivate={() => setActiveLinuxRecipe("rpm")} />
         </div>
-        <p className="site-platform-install"><strong>Install:</strong> Download → verify → run the AppImage, or install deb/rpm with your package manager.</p>
+        <LinuxQuickInstall
+          activeRecipe={activeLinuxRecipe}
+          onRecipeChange={setActiveLinuxRecipe}
+        />
+        <p className="site-platform-install"><strong>Install:</strong> choose the recipe above, copy its command, and paste it into Terminal. Download and verification happen before installation.</p>
         <div className="site-platform-requirements">
           <strong>Before you build</strong>
           <ul>
@@ -374,7 +743,7 @@ function DownloadPicker() {
           </ul>
         </div>
         <p className="site-platform-guidance">Aseprite Installer provides the right apt, dnf, pacman, or zypper command for recognized distributions. It never runs <code>sudo</code> or <code>pkexec</code>.</p>
-        <p className="site-platform-warning"><strong>First launch:</strong> packages are unsigned. Verify the checksum and provenance; an AppImage may also need <code>chmod +x</code> before it opens.</p>
+        <p className="site-platform-warning"><strong>First launch:</strong> packages are unsigned. The quick-install command verifies <code>SHA256SUMS</code> and makes AppImage executable before opening it. If you install manually, verify the checksum and provenance yourself.</p>
       </section>
 
       <div className="site-download-footer">
@@ -389,6 +758,79 @@ function DownloadPicker() {
 }
 
 function App() {
+  const [detection, setDetection] = useState<PlatformDetection | null>(null);
+  const [ctaDetection, setCtaDetection] = useState<PlatformDetection | null>(null);
+  const [manualPlatform, setManualPlatform] = useState<PlatformId | null>(null);
+  const heroCtaRef = useRef<HTMLAnchorElement>(null);
+  const heroCtaPointerActiveRef = useRef(false);
+  const pendingCtaDetectionRef = useRef<PlatformDetection | null>(null);
+  const pendingCtaReleaseTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const navigatorLike = navigator as Navigator & NavigatorLike;
+
+    const applyDetection = (nextDetection: PlatformDetection) => {
+      if (cancelled) return;
+      setDetection(nextDetection);
+
+      if (
+        heroCtaPointerActiveRef.current ||
+        document.activeElement === heroCtaRef.current
+      ) {
+        pendingCtaDetectionRef.current = nextDetection;
+      } else {
+        pendingCtaDetectionRef.current = null;
+        setCtaDetection(nextDetection);
+      }
+    };
+
+    applyDetection(detectPlatformSync(navigatorLike));
+    void detectPlatform(navigatorLike).then(applyDetection);
+
+    return () => {
+      cancelled = true;
+      if (pendingCtaReleaseTimerRef.current !== null) {
+        window.clearTimeout(pendingCtaReleaseTimerRef.current);
+      }
+    };
+  }, []);
+
+  const activePlatform =
+    manualPlatform ??
+    (detection === null
+      ? "macos"
+      : detection.platform && !detection.hasConflict
+        ? detection.platform
+        : null);
+  const smartCta = getSmartDownloadCta(ctaDetection, manualPlatform);
+  const detectionStatus = getDetectionStatus(detection, manualPlatform);
+
+  const handlePlatformChoice = (platform: PlatformId) => {
+    setManualPlatform(platform);
+  };
+
+  const handleHeroCtaBlur = () => {
+    heroCtaPointerActiveRef.current = false;
+    const pendingDetection = pendingCtaDetectionRef.current;
+    if (!pendingDetection) return;
+    pendingCtaDetectionRef.current = null;
+    setCtaDetection(pendingDetection);
+  };
+
+  const handleHeroCtaPointerCancel = () => {
+    heroCtaPointerActiveRef.current = false;
+    handleHeroCtaBlur();
+  };
+
+  const handleHeroCtaClick = () => {
+    heroCtaPointerActiveRef.current = false;
+    pendingCtaReleaseTimerRef.current = window.setTimeout(() => {
+      pendingCtaReleaseTimerRef.current = null;
+      if (document.activeElement !== heroCtaRef.current) handleHeroCtaBlur();
+    }, 0);
+  };
+
   return (
     <div className="site-page">
       <a className="site-skip-link" href="#main">Skip to content</a>
@@ -416,7 +858,18 @@ function App() {
               Aseprite Installer verifies official source, checks your build tools, and compiles a personal copy locally on macOS, Windows, or Linux. The installer is free and MIT-licensed; Aseprite’s EULA still applies.
             </p>
             <div className="site-hero-actions">
-              <a className="site-button" href="#install">Choose your platform <span aria-hidden="true">↓</span></a>
+              <a
+                className="site-button"
+                data-download-target={smartCta.target ?? "picker"}
+                href={smartCta.href}
+                onBlur={handleHeroCtaBlur}
+                onClick={handleHeroCtaClick}
+                onPointerCancel={handleHeroCtaPointerCancel}
+                onPointerDown={() => { heroCtaPointerActiveRef.current = true; }}
+                ref={heroCtaRef}
+              >
+                {smartCta.label} <span aria-hidden="true">↓</span>
+              </a>
               <a className="site-text-link" href={GITHUB_URL}>View source on GitHub <ExternalArrow /></a>
             </div>
             <p className="site-compatibility">
@@ -441,7 +894,11 @@ function App() {
             <h2>Choose your platform. Build locally.</h2>
             <p>Select the installer made for your system. Every package comes from the same verified release and builds Aseprite only on your device.</p>
           </div>
-          <DownloadPicker />
+          <DownloadPicker
+            activePlatform={activePlatform}
+            detectionStatus={detectionStatus}
+            onPlatformChange={handlePlatformChoice}
+          />
         </section>
 
         <section className="site-section site-how" id="how-it-works">

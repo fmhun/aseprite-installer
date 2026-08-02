@@ -70,7 +70,12 @@ invariant(html.includes("Windows 11"), "the Windows support baseline is missing"
 invariant(html.includes("Linux x86_64"), "the Linux architecture is missing");
 invariant(html.includes("open the DMG"), "the macOS installation path is missing");
 invariant(html.includes("run the current-user installer"), "the Windows installation path is missing");
-invariant(html.includes("run the AppImage"), "the Linux installation path is missing");
+invariant(
+  html.includes("One command. Verified install.") &&
+    html.includes("sha256sum --check") &&
+    html.includes("Aseprite-Installer-Linux-x86_64.AppImage"),
+  "the verified Linux installation path is missing",
+);
 invariant(html.includes("Which installer should I choose?"), "the platform package FAQ is missing");
 invariant(html.includes("Does the installer distribute Aseprite?"), "the FAQ is missing from the initial HTML");
 invariant(html.includes("Aseprite remains subject to its own EULA"), "the Aseprite license distinction is missing");
