@@ -59,7 +59,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24.15.0
@@ -85,7 +85,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - name: Install APT repository test tools
         run: |
           sudo apt-get update
@@ -97,13 +97,60 @@ jobs:
             xz-utils
       - run: bash .github/scripts/test-apt-repository.sh
 
+  release_state:
+    name: Resolve published release
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') &&
+      (github.event_name == 'workflow_run' || github.ref == 'refs/heads/main')
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    outputs:
+      published: ${{ steps.release.outputs.published }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24.15.0
+      - name: Require a public stable release for the packaged version
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          release_version="$(node --input-type=module -e \
+            'import { readFileSync } from "node:fs"; process.stdout.write(JSON.parse(readFileSync("package.json", "utf8")).version)')"
+          release_tag="v${release_version}"
+          release_state="$(
+            gh release view "$release_tag" \
+              --repo "$GITHUB_REPOSITORY" \
+              --json isDraft,isPrerelease \
+              --jq '[.isDraft, .isPrerelease] | @tsv' \
+              2>/dev/null || true
+          )"
+          published=false
+          if [[ "$release_state" == $'false\tfalse' ]]; then
+            published=true
+            echo "Production deployment enabled for public release $release_tag."
+          else
+            echo "Production deployment skipped: $release_tag is not a public stable release."
+          fi
+          echo "published=$published" >> "$GITHUB_OUTPUT"
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+
   apt:
     name: Build production APT repository
     if: >-
       github.event_name != 'pull_request' &&
       (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') &&
-      (github.event_name == 'workflow_run' || github.ref == 'refs/heads/main')
-    needs: apt-test
+      (github.event_name == 'workflow_run' || github.ref == 'refs/heads/main') &&
+      needs.release_state.outputs.published == 'true'
+    needs: [apt-test, release_state]
     runs-on: ubuntu-22.04
     timeout-minutes: 15
     permissions:
@@ -114,7 +161,7 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.head_sha || github.sha }}
       - name: Install APT repository tools
         run: |
           sudo apt-get update
@@ -183,8 +230,9 @@ jobs:
     if: >-
       github.event_name != 'pull_request' &&
       (github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success') &&
-      (github.event_name == 'workflow_run' || github.ref == 'refs/heads/main')
-    needs: [build, apt]
+      (github.event_name == 'workflow_run' || github.ref == 'refs/heads/main') &&
+      needs.release_state.outputs.published == 'true'
+    needs: [build, apt, release_state]
     runs-on: ubuntu-22.04
     timeout-minutes: 10
     permissions:

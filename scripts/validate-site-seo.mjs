@@ -11,7 +11,7 @@ const packageManifest = JSON.parse(await readFile(join(repositoryRoot, "package.
 const releaseVersion = packageManifest.version;
 const releaseTag = `v${releaseVersion}`;
 const releaseUrl = `https://github.com/fmhun/aseprite-installer/releases/tag/${releaseTag}`;
-const releasePublishedDate = "2026-08-01";
+const releasePublishedDate = "2026-08-02";
 const latestAssetBaseUrl = "https://github.com/fmhun/aseprite-installer/releases/latest/download/";
 const releaseAssetNames = [
   "Aseprite-Installer-macOS-arm64.dmg",
@@ -190,7 +190,7 @@ invariant(software.releaseNotes === releaseUrl, "release notes must use the stab
 invariant(software.installUrl === "https://github.com/fmhun/aseprite-installer/releases/latest", "the generic install URL is incorrect");
 invariant(
   JSON.stringify(software.downloadUrl) === JSON.stringify(expectedDownloadUrls),
-  "structured download URLs do not match the exact v0.2.0 release asset allow-list",
+  `structured download URLs do not match the exact ${releaseTag} release asset allow-list`,
 );
 invariant(
   JSON.stringify(software.operatingSystem) === JSON.stringify(expectedOperatingSystems),

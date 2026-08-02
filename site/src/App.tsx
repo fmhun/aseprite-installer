@@ -8,6 +8,7 @@ import {
 } from "react";
 import installerIcon from "../../assets/icons/aseprite-installer.svg";
 import localBuildIcon from "../../assets/icons/aseprite-local.svg";
+import packageManifest from "../../package.json";
 import type { DemoPhase } from "./demo";
 import {
   detectPlatform,
@@ -315,7 +316,7 @@ export function ProductDemo() {
               <img src={installerIcon} alt="" width="26" height="26" />
               <span>Aseprite Installer</span>
             </div>
-            <span className="demo-app-version">v0.2</span>
+            <span className="demo-app-version">v{packageManifest.version}</span>
           </div>
           <div className="demo-workspace">
             <ScreenForPhase phase={frame.phase} progress={frame.progress} buildStage={frame.buildStage} />

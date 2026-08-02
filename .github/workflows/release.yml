@@ -196,9 +196,12 @@ jobs:
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked --target "${{ matrix.target }}" -- -D warnings
       - name: Test native target
         run: cargo test --manifest-path src-tauri/Cargo.toml --locked --target "${{ matrix.target }}"
-      - name: Build platform bundles
-        if: runner.os != 'Linux'
+      - name: Build Windows bundles
+        if: runner.os == 'Windows'
         run: npm run tauri build -- --ci --target "${{ matrix.target }}" --bundles "${{ matrix.bundles }}" -- --locked
+      - name: Build macOS bundles with bounded DMG retries
+        if: runner.os == 'macOS'
+        run: bash .github/scripts/build-macos-bundles.sh "${{ matrix.target }}"
       - name: Build Linux bundles
         if: runner.os == 'Linux'
         run: |

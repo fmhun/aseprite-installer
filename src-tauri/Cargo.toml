@@ -1,6 +1,6 @@
 [package]
 name = "aseprite-installer"
-version = "0.2.0"
+version = "0.3.0"
 description = "Compile and manage a personal Aseprite installation from official sources"
 authors = ["fmhun"]
 edition = "2021"

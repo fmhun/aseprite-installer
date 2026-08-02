@@ -71,7 +71,7 @@ body:
     attributes:
       label: Aseprite Installer version
       description: Find this in the application package or release name.
-      placeholder: v0.1.0
+      placeholder: vX.Y.Z
     validations:
       required: true
 

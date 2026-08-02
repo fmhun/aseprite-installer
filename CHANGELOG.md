@@ -4,10 +4,16 @@ All notable changes to Aseprite Installer are documented here.
 
 ## Unreleased
 
+## 0.3.0 — 2026-08-02
+
+- Added an OS-aware download experience and production platform simulator for macOS, Windows, and Linux.
+- Published a signed APT repository with verified setup instructions and expiring repository metadata.
 - Recorded the exact Aseprite release, source digest, and upstream installation/build-file identities reviewed by the installer.
 - Blocked Aseprite releases above the reviewed compatibility boundary while preserving the stricter pinned-Skia gate on Linux and Windows.
 - Added a weekly upstream drift watcher that reconciles one maintainer review issue without compiling or redistributing Aseprite.
 - Linked prerequisite guidance to the immutable reviewed installation instructions and clarified the latest reviewed release in the interface.
+- Prevented GitHub Pages and APT production deployments from advertising an unpublished installer version.
+- Made macOS DMG packaging retryable without recompiling after an intermittent disk-image failure.
 
 ## 0.2.0 — 2026-08-01
 
