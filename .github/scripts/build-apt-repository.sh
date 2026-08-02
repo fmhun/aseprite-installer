@@ -114,6 +114,7 @@ done
 
 release_directory="$output_directory/dists/stable"
 valid_until="${APT_REPOSITORY_VALID_UNTIL:-$(date --utc --date='+90 days' --rfc-email)}"
+release_body="$release_directory/Release.body"
 (
   cd "$output_directory"
   apt-ftparchive \
@@ -124,9 +125,21 @@ valid_until="${APT_REPOSITORY_VALID_UNTIL:-$(date --utc --date='+90 days' --rfc-
     -o APT::FTPArchive::Release::Architectures="amd64" \
     -o APT::FTPArchive::Release::Components="main" \
     -o APT::FTPArchive::Release::Acquire-By-Hash="yes" \
-    -o APT::FTPArchive::Release::Valid-Until="$valid_until" \
-    release dists/stable > "dists/stable/Release"
+    release dists/stable > "dists/stable/Release.body"
 )
+if ! grep -q '^Date: ' "$release_body"; then
+  echo "apt-ftparchive did not generate the required Date field." >&2
+  exit 1
+fi
+awk -v valid_until="$valid_until" '
+  /^Date: / {
+    print
+    print "Valid-Until: " valid_until
+    next
+  }
+  { print }
+' "$release_body" > "$release_directory/Release"
+rm -- "$release_body"
 
 gpg --batch --yes --pinentry-mode loopback \
   --local-user "$expected_fingerprint" \
